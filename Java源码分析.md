@@ -524,7 +524,98 @@ prefix+string1+delimier+string2+delimiter+string3+...+delimiter+stringN+suffix
 
 # java.lang.StringBuilder类
 
+StringBuilder内部结构与String的一致，同为维护了一个名为value的字符数组，与String的不同的地方在于：
 
+1. StringBuilder只有在调用toString函数时候才会将内部的value数组构造为String对象返回
+2. StringBuilder提供了大量可以对value数组修改的方法，比如插入、替换、反转、追加等操作，以避免在String对象上操作构造出目标字符串从而提升效率
+3. StringBuilder内部的相当一部分函数使用了函数System.arraycopy(src, srcBegin, dst, dstBegin, len)，该函数为C++native实现，具有较高的执行效率
+
+
+
+
+
+StringBuilder中value数组的默认长度为16，扩充一次默认为当前长度的2倍加2。
+
+初始化函数：
+
+```java
+public StringBuilder() {
+    super(16);
+}
+```
+
+容量扩充函数：
+
+```java
+void expandCapacity(int minimumCapacity) {
+    int newCapacity = value.length * 2 + 2;
+    if (newCapacity - minimumCapacity < 0)
+        newCapacity = minimumCapacity;
+    if (newCapacity < 0) {
+        if (minimumCapacity < 0) // overflow
+            throw new OutOfMemoryError();
+        newCapacity = Integer.MAX_VALUE;
+    }
+    value = Arrays.copyOf(value, newCapacity);
+}
+```
+
+
+
+
+
+StringBuilder在value数组中插入元素的原理：
+
+![](imgs/StringBuilder_insert.png)
+
+```java
+public AbstractStringBuilder insert(int index, char[] str, int offset, int len) {
+        if ((index < 0) || (index > length()))
+            throw new StringIndexOutOfBoundsException(index);
+        if ((offset < 0) || (len < 0) || (offset > str.length - len))
+            throw new StringIndexOutOfBoundsException(
+                "offset " + offset + ", len " + len + ", str.length "
+                + str.length);
+        ensureCapacityInternal(count + len);
+    
+    	//这两行操作如上图
+        System.arraycopy(value, index, value, index + len, count - index);
+        System.arraycopy(str, offset, value, index, len);
+    
+        count += len;
+        return this;
+}
+```
+
+
+
+StringBuilder对value做replace操作的原理：
+
+![](imgs/stringbuilder_replace.png)
+
+```java
+public AbstractStringBuilder replace(int start, int end, String str) {
+        if (start < 0)
+            throw new StringIndexOutOfBoundsException(start);
+        if (start > count)
+            throw new StringIndexOutOfBoundsException("start > length()");
+        if (start > end)
+            throw new StringIndexOutOfBoundsException("start > end");
+
+        if (end > count)
+            end = count;
+        int len = str.length();
+        int newCount = count + len - (end - start);
+        ensureCapacityInternal(newCount);
+    
+		//这两行操作如上图
+        System.arraycopy(value, end, value, start + len, count - end);
+        str.getChars(value, start);
+    
+        count = newCount;
+        return this;
+}
+```
 
 
 
