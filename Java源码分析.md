@@ -522,7 +522,7 @@ prefix+string1+delimier+string2+delimiter+string3+...+delimiter+stringN+suffix
 
 
 
-# java.lang.StringBuilder类
+# java.lang.AbstractStringBuilder类
 
 StringBuilder内部结构与String的一致，同为维护了一个名为value的字符数组，与String的不同的地方在于：
 
@@ -532,7 +532,7 @@ StringBuilder内部结构与String的一致，同为维护了一个名为value�
 
 
 
-
+## 容量扩充
 
 StringBuilder中value数组的默认长度为16，扩充一次默认为当前长度的2倍加2。
 
@@ -562,7 +562,7 @@ void expandCapacity(int minimumCapacity) {
 
 
 
-
+## 插入操作
 
 StringBuilder在value数组中插入元素的原理：
 
@@ -588,6 +588,8 @@ public AbstractStringBuilder insert(int index, char[] str, int offset, int len) 
 ```
 
 
+
+## replace操作
 
 StringBuilder对value做replace操作的原理：
 
@@ -619,5 +621,406 @@ public AbstractStringBuilder replace(int start, int end, String str) {
 
 
 
+# java.lang.StringBuilder类
+
+StringBuilder继承于AbstractStringBuilder，该类中的所有方法的实现都是直接调用其父类方法。StringBuilder中的方法在被调用时，会调用父类的方法去完成任务。
+
+## 非线程安全
+
+StringBuilder并**不保证其类中的方法线程安全**，所以相比StringBuffer，在单线程的环境下推荐使用StringBuilder以获取最佳的性能。
+
+
+
 # java.lang.StringBuffer类
+
+StringBuffer与StringBuilder一样，同是继承于AbstractStringBuilder，该类中的所有方法的实现都是直接调用其父类方法，且每个方法都加上了**synchronized**关键词以保证线程安全。
+
+```java
+@Override
+public synchronized String substring(int start, int end) {
+    return super.substring(start, end);
+}
+```
+
+## toStringCache
+
+```private transient char[] toStringCache;```
+
+toStringCache缓存最后一次toString的结果，在toString之后的操纵并不修改其内容，每执行一次toString更新一次其值。
+
+### transient关键词
+
+> Java的serialization提供了一种持久化对象实例的机制。当持久化对象时，可能有一个特殊的对象数据成员，我们不想用serialization机制来保存它。为了在一个特定对象的一个域上关闭serialization，可以在这个域前加上关键字transient。
+>
+> transient是Java语言的关键字，用来表示一个域不是该对象串行化的一部分。当一个对象被串行化的时候，transient型变量的值不包括在串行化的表示中，然而非transient型的变量是被包括进去的。
+
+
+
+## 线程安全
+
+
+StringBuffer的所有方法都有**synchronized**关键词，因此该类保证其类中的方法线程安全。
+
+
+
+## StringBuilder，StringBuffer，AbstractStringBuilder的关系
+
+![](imgs/StringBuilder.png)
+
+# Java集合框架
+
+## List
+
+List介绍。。。。。。。。。。。。。。。。。。。。。。
+
+### List类图
+
+
+
+### ArrayList
+
+正如其名字，ArrayList内部维护一个Object类型的数组，与一个size变量。
+
+#### 插入
+
+1. add(E element)
+
+   检查容量，在必要的时候扩充容量，然后将新的元素插入到内部数组末尾。
+
+2. add(int index, E element)
+
+   检查容量，在必要的时候扩充容量，**将从index开始到尾部的所有元素通过System.arraycopy()后移一个位置**，然后将新的元素插入到内部数组末尾。
+
+3. addAll(Collection<? extends E> c)
+
+   首先得c中的内部数组引用到变量a，将ArrayList的容量进行检查并在必要的时候扩充容量，使用**System.arraycopy**将数组a的追加到ArrayList中的数组。代码如下：
+
+   ```java
+   System.arraycopy(a, 0, elementData, size, numNew);
+   //(插入数组，插入数组的起始访问坐标，ArrayList的内部数组，插入为尾部参数size,插入数量a的长度)
+   ```
+
+4. addAll(int index, Collection<? extends E> c)
+
+   检查index是否在ArrayList的最大下标范围之中；取得c中的内部数组引用到变量a；检查ArrayList的容量必要的情况下对其进行扩充；**将从index开始到尾部的所有元素通过System.arraycopy()后移c.size()个位置**； 使用**System.arraycopy**将c复制到ArrayList从index处开始的位置。 代码大致如下：
+
+   ```java
+   //后移元素
+   System.arraycopy(elementData, index, elementData, index + numNew,numMoved);
+   //插入元素
+   System.arraycopy(a, 0, elementData, index, numNew);
+   ```
+
+   
+
+**插入元素时的容量检查与扩充**
+
+对程序员开放的调整容量的函数`ensureCapacity`，扩充的最小容量小于ArrayList默认最小容量10的时候，扩充操纵将被忽略。
+
+> Arraylist在扩充容量的时候，新的容量首先被扩充为就容量的1.5倍，如果1.5倍值不足minCapacity，那么新的容量被调整为minCapacity，容量的的最大值可以达到Integer.MAX_VALUE
+
+```java
+public void ensureCapacity(int minCapacity) {
+    int minExpand = (elementData != DEFAULTCAPACITY_EMPTY_ELEMENTDATA)
+        // any size if not default element table
+        ? 0
+        // larger than default for default empty table. It's already
+        // supposed to be at default size.
+        : DEFAULT_CAPACITY; //10
+    if (minCapacity > minExpand) {
+        ensureExplicitCapacity(minCapacity);
+    }
+}
+```
+
+
+
+私有函数`ensureExplicitCapacity`的定义
+
+```java
+private void ensureCapacityInternal(int minCapacity) {
+    if (elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA) {//空数组
+        minCapacity = Math.max(DEFAULT_CAPACITY, minCapacity);
+	}
+	ensureExplicitCapacity(minCapacity);
+}
+
+private void ensureExplicitCapacity(int minCapacity) {
+	modCount++;
+	// overflow-conscious code
+    if (minCapacity - elementData.length > 0)
+		grow(minCapacity);
+}
+```
+
+
+
+扩充的具体操作
+
+```java
+    /**
+     * The maximum size of array to allocate.
+     * Some VMs reserve some header words in an array.
+     * Attempts to allocate larger arrays may result in
+     * OutOfMemoryError: Requested array size exceeds VM limit
+     */
+    private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
+    /**
+     * Increases the capacity to ensure that it can hold at least the
+     * number of elements specified by the minimum capacity argument.
+     *
+     * @param minCapacity the desired minimum capacity
+     */
+    private void grow(int minCapacity) {
+        // overflow-conscious code
+        int oldCapacity = elementData.length;
+        //默认扩大为旧容量的1.5倍
+        int newCapacity = oldCapacity + (oldCapacity >> 1);
+        //如果扩大1.5倍之后还是达不到目标值minCapacity，那么直接使用minCapacity的值，
+        //如果newCapacity溢出之后为负数，那么了newCapacity将被minCapacity替换，
+        //minCapacity会保证是一个正数
+        if (newCapacity - minCapacity < 0)
+            newCapacity = minCapacity;
+        
+        //如果新的容量值超出了MAX_ARRAY_SIZE，那么对minCapacity再一次检查，如果超过了MAX_ARRAY_SIZE
+        //且没有溢出，直接将容量调整为正数最大值，如果没有超过MAX_ARRAY_SIZE，那么使用这个值作为容量
+        if (newCapacity - MAX_ARRAY_SIZE > 0)
+            newCapacity = hugeCapacity(minCapacity);
+        
+        // minCapacity is usually close to size, so this is a win:
+        //开辟新的容量为newCapacity的数组，将旧数组的元素复制进入，然后将其返回给elementData
+        elementData = Arrays.copyOf(elementData, newCapacity);
+    }
+
+    private static int hugeCapacity(int minCapacity) {
+        if (minCapacity < 0) // overflow
+            throw new OutOfMemoryError();
+        return (minCapacity > MAX_ARRAY_SIZE) ?
+            Integer.MAX_VALUE :
+            MAX_ARRAY_SIZE;
+    }
+```
+
+
+
+#### 删除
+
+1. remove(int index)
+
+   ```java
+   System.arraycopy(elementData, index+1, elementData, index, numMoved);
+   elementData[--size] = null; // clear to let GC do its work
+   ```
+
+   将index+1处开始到末尾的元素向前移动一位；将size值减一并置最后一个元素为null方便垃圾回收。
+
+2. remove(Object o)
+
+   删除机制与remove(int index)一致，先查找目标对象的下标，然后执行删除操作。
+
+3. removeAll(Collection\<?> c) 与retainAll(Collection<?> c)
+
+   removeAll与retailAll是一对相反的操作，所以其内部实现实际上是调用的同一个函数，核心代码如下：
+
+   ```java
+   int r = 0, w = 0;
+   for (; r < size; r++)
+       //不同函数收集不同的目标元素，remove->complement为false, retail->complement为true
+   	if (c.contains(elementData[r]) == complement)
+   		elementData[w++] = elementData[r];//收集目标元素防止在数组靠前位置
+   
+   if (w != size) {
+   	// clear to let GC do its work
+       for (int i = w; i < size; i++)
+   		elementData[i] = null;//将末尾置为null
+   	size = w;//更新数组容量
+   }
+   ```
+
+   
+
+4. removeIf(Predicate<? super E> filter)
+
+   removeIf先使用BitMap记录符合filter规则的元素，也就是需要被删除的元素；然后执行的操纵与removeAll类似。
+
+
+
+#### 迭代器
+
+迭代器是ArrayList中的一个内部类。
+
+
+
+Clear
+
+```java
+public void clear() {
+    modCount++;
+    // clear to let GC do its work
+    for (int i = 0; i < size; i++)
+        elementData[i] = null;
+    size = 0;
+}
+```
+
+
+
+sort调用Arrays.sort()，其内部为快速排序实现。
+
+contains()线性查找，时间复杂度O(n)。
+
+clone()函数实现
+
+```java
+public Object clone() {
+        try {
+            ArrayList<?> v = (ArrayList<?>) super.clone();
+            v.elementData = Arrays.copyOf(elementData, size);
+            v.modCount = 0;
+            return v;
+        } catch (CloneNotSupportedException e) {
+            // this shouldn't happen, since we are Cloneable
+            throw new InternalError(e);
+        }
+    }
+```
+
+
+
+
+
+### LinkedList
+
+
+
+#### 插入
+
+
+
+#### 删除
+
+
+
+#### 修改
+
+
+
+#### 查看
+
+
+
+#### 迭代器
+
+
+
+
+
+## Set
+
+### HashSet
+
+#### 插入
+
+
+
+#### 删除
+
+
+
+#### 修改
+
+
+
+#### 查看
+
+
+
+#### 迭代器
+
+
+
+### TreeSet
+
+
+
+#### 插入
+
+
+
+#### 删除
+
+
+
+#### 修改
+
+
+
+#### 查看
+
+
+
+#### 迭代器
+
+
+
+## Map
+
+### HashMap
+
+#### 插入
+
+
+
+#### 删除
+
+
+
+#### 修改
+
+
+
+#### 查看
+
+
+
+#### 迭代器
+
+
+
+### TreeMap
+
+
+
+#### 插入
+
+
+
+#### 删除
+
+
+
+#### 修改
+
+
+
+#### 查看
+
+
+
+#### 迭代器
+
+
+
+## Queue
+
+
+
+## Stack
+
+
+
+## 迭代器
+
+
 
