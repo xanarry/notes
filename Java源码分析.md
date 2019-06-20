@@ -671,18 +671,16 @@ StringBuffer的所有方法都有**synchronized**关键词，因此该类保证�
 
 ## List
 
-List介绍。。。。。。。。。。。。。。。。。。。。。。
-
 ### List类图
 
-
+![](imgs/list_oop.png)
 
 ### ArrayList
-
 正如其名字，ArrayList内部维护一个Object类型的数组，与一个size变量。
 
-#### 插入
 
+
+#### 插入
 1. add(E element)
 
    检查容量，在必要的时候扩充容量，然后将新的元素插入到内部数组末尾。
@@ -714,6 +712,14 @@ List介绍。。。。。。。。。。。。。。。。。。。。。。
    
 
 **插入元素时的容量检查与扩充**
+> The array buffer into which the elements of the ArrayList are stored.
+> The capacity of the ArrayList is the length of this array buffer. Any
+> empty ArrayList with elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA
+> will be expanded to DEFAULT_CAPACITY when the first element is added.
+
+不带容量参数定义ArrayList时，elementData指向DEFAULTCAPACITY_EMPTY_ELEMENTDATA，当第一个元素插入时，将其容量扩充为DEFAULT_CAPACITY，10个容量。
+
+
 
 对程序员开放的调整容量的函数`ensureCapacity`，扩充的最小容量小于ArrayList默认最小容量10的时候，扩充操纵将被忽略。
 
@@ -848,7 +854,93 @@ private void ensureExplicitCapacity(int minCapacity) {
 
 #### 迭代器
 
-迭代器是ArrayList中的一个内部类。
+迭代器是ArrayList中的一个内部类。对内部数组的访问与删除做了封装。
+
+我们看调用iterater函数时发生了什么：
+
+```java
+public Iterator<E> iterator() {
+	return listIterator();//返回ArrayList内部类的一个实例
+}
+```
+
+
+
+内部类`Iterator`的实现代码
+
+```java
+private class Itr implements Iterator<E> {
+    int cursor;       // index of next element to return
+    int lastRet = -1; // index of last element returned; -1 if no such
+    int expectedModCount = modCount;
+
+    public boolean hasNext() {
+        //cursor表当前元素的下一个元素的下标，如果小于size说明还有元素可以访问
+        return cursor != size; 
+    }
+
+    @SuppressWarnings("unchecked")
+    public E next() {
+        checkForComodification();
+        int i = cursor; //即将被访问的元素
+        if (i >= size) //检查是否下标越界
+            throw new NoSuchElementException();
+        //取得ArrayList内部数组的引用
+        Object[] elementData = ArrayList.this.elementData;
+        if (i >= elementData.length)//检查是否下标越界
+            throw new ConcurrentModificationException();
+        cursor = i + 1;//光标后移一位
+        return (E) elementData[lastRet = i]; //设置当前访问元素的下标并返回目标元素
+    }
+
+    public void remove() {
+        if (lastRet < 0)
+            throw new IllegalStateException();
+        checkForComodification();
+
+        try {
+            //下面代码的等价形式
+            //System.arraycopy(elementData, index + 1, elementData, index, size - index - 1);
+            ArrayList.this.remove(lastRet);
+            //因为当前元素被删除，后面的所有元素前移一位，
+            //所以cursor置为lastRet就标记了下一个即将访问的元素的下标
+            cursor = lastRet;
+            //因为lastRet处的元素已经被删除，所以将该值设为-1
+            lastRet = -1;
+            expectedModCount = modCount;
+        } catch (IndexOutOfBoundsException ex) {
+            throw new ConcurrentModificationException();
+        }
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void forEachRemaining(Consumer<? super E> consumer) {
+        Objects.requireNonNull(consumer);
+        final int size = ArrayList.this.size;
+        int i = cursor;
+        if (i >= size) {
+            return;
+        }
+        final Object[] elementData = ArrayList.this.elementData;
+        if (i >= elementData.length) {
+            throw new ConcurrentModificationException();
+        }
+        while (i != size && modCount == expectedModCount) {
+            consumer.accept((E) elementData[i++]);
+        }
+        // update once at end of iteration to reduce heap write traffic
+        cursor = i;
+        lastRet = i - 1;
+        checkForComodification();
+    }
+
+    final void checkForComodification() {
+        if (modCount != expectedModCount)
+            throw new ConcurrentModificationException();
+    }
+}
+```
 
 
 
@@ -874,17 +966,21 @@ clone()函数实现
 
 ```java
 public Object clone() {
-        try {
-            ArrayList<?> v = (ArrayList<?>) super.clone();
-            v.elementData = Arrays.copyOf(elementData, size);
-            v.modCount = 0;
-            return v;
-        } catch (CloneNotSupportedException e) {
-            // this shouldn't happen, since we are Cloneable
-            throw new InternalError(e);
-        }
+    try {
+        ArrayList<?> v = (ArrayList<?>) super.clone();
+        v.elementData = Arrays.copyOf(elementData, size);
+        v.modCount = 0;
+        return v;
+    } catch (CloneNotSupportedException e) {
+        // this shouldn't happen, since we are Cloneable
+        throw new InternalError(e);
     }
+}
 ```
+
+
+
+### Vector
 
 
 
@@ -892,25 +988,243 @@ public Object clone() {
 
 ### LinkedList
 
+LinkedList同时实现了List接口与queue接口，非线程安全。内部结构由双向链表实现，同时为每个结点配备了相对应的数值索引，需要注意的是该索引并没有保存到结点中，而是在**每次使用的时候通过遍历链表去查询相应索引所在的元素或者相应元素对应的索引**。内部为如图这样的结构：
 
+![](imgs/double-linkedlist.png)
+
+LinkedList中Node结点的定义，Node是LinkedList的一个内部类。
+
+```java
+private static class Node<E> {
+    E item;
+    Node<E> next;
+    Node<E> prev;
+
+    Node(Node<E> prev, E element, Node<E> next) {
+        this.item = element;
+        this.next = next;
+        this.prev = prev;
+    }
+}
+```
 
 #### 插入
 
-
+该类内部实现了头部插入、中间插入、尾部插入三种插入方式以满足各式需求。Java的实现方式与我们自己的实现方式并无二异，操作正确对next和prev指针的指向即可，插入后将size加1。
 
 #### 删除
 
+删除与插入一样，没有需要特别注意的地方。删除后将size减1。
+
+#### 索引相关函数
+
+1. 得到指定位置的元素
+
+   值得学习的地方：**在链表的前一半从前向后查找；在链表的后一半从后向前查找**
+
+```java
+/**
+ * Returns the (non-null) Node at the specified element index.
+ */
+Node<E> node(int index) {
+    // assert isElementIndex(index);
+    if (index < (size >> 1)) {
+        Node<E> x = first;
+        for (int i = 0; i < index; i++)
+            x = x.next;
+        return x;
+    } else {
+        Node<E> x = last;
+        for (int i = size - 1; i > index; i--)
+            x = x.prev;
+        return x;
+    }
+}
+```
 
 
-#### 修改
 
+2. 得到目标元素所在的位置
 
+   遍历链表，在变量的过程计数，遇到目标结点则停止。
 
-#### 查看
+```java
+public int indexOf(Object o) {
+    int index = 0;
+    if (o == null) {
+        for (Node<E> x = first; x != null; x = x.next) {
+            if (x.item == null)
+                return index;
+            index++;
+        }
+    } else {
+        for (Node<E> x = first; x != null; x = x.next) {
+            if (o.equals(x.item))
+                return index;
+            index++;
+        }
+    }
+    return -1;
+}
+```
 
 
 
 #### 迭代器
+
+迭代器为LinkedList的一个内部类，以便访问其中的元素，获取迭代器则取得该内部类的一个实例。
+
+获取迭代器：
+
+```java
+public ListIterator<E> listIterator(int index) {
+    checkPositionIndex(index);
+    return new ListItr(index);
+}
+```
+
+
+
+迭代器的具体实现：
+
+```java
+private class ListItr implements ListIterator<E> {
+    private Node<E> lastReturned;
+    private Node<E> next;//即将被访问的元素
+    private int nextIndex;//即将被访问元素的下标
+    private int expectedModCount = modCount;
+
+    //构造函数，设置起始迭代位置,如果index等于size,那么已经没有元素可以迭代
+    ListItr(int index) {
+        // assert isPositionIndex(index);
+        next = (index == size) ? null : node(index);
+        nextIndex = index;
+    }
+	
+    //迭代位置的索引没有到尾部则可以继续向后迭代
+    public boolean hasNext() {
+        return nextIndex < size;
+    }
+	
+    public E next() {
+        checkForComodification();
+        //如果已经到尾部，那么抛出异常
+        if (!hasNext())
+            throw new NoSuchElementException();
+		//标记本次需要返回元素所在的结点
+        lastReturned = next;
+        next = next.next;//向后移动一次指针指向下次应该返回的元素
+        nextIndex++;//索引加一，标记下一个元素的索引位置
+        return lastReturned.item; //返回目标元素
+    }
+
+    public boolean hasPrevious() {
+        return nextIndex > 0; //如果当前位置不是在第一个位置，那么有前驱结点
+    }
+
+    public E previous() {
+        checkForComodification();
+        if (!hasPrevious())//没有前驱结点可访问则抛出异常
+            throw new NoSuchElementException();
+		//如果已经到尾部之后，那么前一个元素一定是尾部元素，
+        //否则返回即将访问元素的前一个元素，并重置lastReturned与next
+        lastReturned = next = (next == null) ? last : next.prev;
+        nextIndex--;//索引回退1
+        return lastReturned.item;
+    }
+
+    public int nextIndex() {
+        return nextIndex;
+    }
+
+    public int previousIndex() {
+        return nextIndex - 1;
+    }
+
+    //删除next()函数刚刚返回的结点，也就是正是被lastReturned变量引用的结点
+    public void remove() {
+        checkForComodification();
+        if (lastReturned == null)//如果是null,抛出异常
+            throw new IllegalStateException();
+		
+        //得到要删除元素的下一个元素，记为lastNext
+        Node<E> lastNext = lastReturned.next;
+        //删除目标元素
+        unlink(lastReturned);
+        
+        if (next == lastReturned)
+            //如果在删除之前执行了previous，就会导致这种情况，重置next，
+            //因为nextIndex--已经在previous函数中执行，所以不用更新
+            next = lastNext;
+        else//next就在正确的位置，仅需要更新一下索引
+            nextIndex--;
+        lastReturned = null;//本用来被next函数访问的结点已经被删除，置为null
+        expectedModCount++;
+    }
+
+    public void set(E e) {
+        if (lastReturned == null)
+            throw new IllegalStateException();
+        checkForComodification();
+        lastReturned.item = e;//直接设置结点新值
+    }
+
+    public void add(E e) {
+        checkForComodification();
+        //next结点之前插入一个元素。
+        lastReturned = null;
+        if (next == null)
+            linkLast(e);
+        else
+            linkBefore(e, next);
+        nextIndex++;
+        expectedModCount++;
+    }
+
+    public void forEachRemaining(Consumer<? super E> action) {
+        Objects.requireNonNull(action);
+        while (modCount == expectedModCount && nextIndex < size) {
+            action.accept(next.item);
+            lastReturned = next;
+            next = next.next;
+            nextIndex++;
+        }
+        checkForComodification();
+    }
+
+    final void checkForComodification() {
+        if (modCount != expectedModCount)
+            throw new ConcurrentModificationException();
+    }
+}
+```
+
+
+
+#### LinkedList上的队列操作
+
+A) 在链表头部的操作	
+
+|             函数名             |                          功能                          |
+| :----------------------------: | :----------------------------------------------------: |
+|        public E peek()         |            返回链表头部的元素，可能返回null            |
+|       public E element()       |         返回链表头部的元素，遇到null则抛出异常         |
+|        public E poll()         |    返回链表头部的元素，可能返回null，**并删除头部**    |
+|       public E remove()        | 返回链表头部的元素，遇到null则抛出异常，**并删除头部** |
+| public boolean offerFirst(E e) |                   插入元素到链表头部                   |
+|      public E peekFirst()      |            返回链表头部的元素，可能返回null            |
+|      public E pollFirst()      |    返回链表头部的元素，可能返回null，**并删除头部**    |
+|     public void push(E e)      |                   插入元素到链表头部                   |
+
+B) 在链表尾部的操作
+
+|            函数名             |                       功能                       |
+| :---------------------------: | :----------------------------------------------: |
+|   public boolean offer(E e)   |                在链表尾部插入元素                |
+| public boolean offerLast(E e) |                在链表尾部插入元素                |
+|      public E peekLast()      |         返回链表尾部的元素，可能返回null         |
+|      public E pollLast()      | 返回链表头部的元素，可能返回null，**并删除头部** |
+|        public E pop()         |                 删除链表头部元素                 |
 
 
 
