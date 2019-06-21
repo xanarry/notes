@@ -1,3 +1,7 @@
+[TOC]
+
+
+
 # java.lang.Integer类
 
 `Integer`在表示32位整数，其范围为`[Integer.MIN_VALUE, Integer.MAX_VALUE]`，下图的源码表示了常量的具体值。
@@ -982,7 +986,59 @@ public Object clone() {
 
 ### Vector
 
+Vector是一个可变长数组，可以通过数值下标访问元素，vector对象创建之后在插入或者删除的过程中可以收缩也可以扩张。vector会维持一个capacity变量capacityIncrement变量，capacity表当前可用容量，capacityIncrement表当容量不足以存储数据时一次扩张的量。
 
+vector的默认容量是10，capacityIncrement的默认值是0。在创建vector对象时，可以同时指定这个两个参数，也可以仅指定capacity，或者不用任何参数使用默认配置。
+
+Vector与ArrayList都继承了基类AbstractList，都实现了List接口，所以其内部实现逻辑上与ArrayList一致，但是与ArrayList有以下两个区别：
+
+
+
+1.容量扩张量不同：
+
+ArrayList在容量扩张的时候需要指定一个最下容量，扩充之后的容量一定大于等于这个minCapacity，ArrayList的扩张量一次为原始容量的1.5倍。
+
+Vector没有minCapacity的约束，空间塞满了就会扩张，一次扩张为原始容量的2倍。
+
+
+
+看看Vector的扩张源码：
+
+```java
+private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
+private void grow(int minCapacity) {
+    // overflow-conscious code
+    int oldCapacity = elementData.length;
+    
+    //一次把容量设置为旧容量的2倍
+    int newCapacity = oldCapacity + ((capacityIncrement > 0) ?
+                                     capacityIncrement : oldCapacity);
+    
+    //这里为什么不用if (newCapacity < minCapacity)是因为：首先在进入该本函数前确保了
+    //minCapacity > elementData.length, newCapacity可能会溢出, newCapacity溢出之后
+    //相当于是3倍的elementData.length，由于2倍的时候有已经溢出为负值，三倍情况会变为正值
+    //所以不会进入该判断语句  
+    if (newCapacity - minCapacity < 0)
+        newCapacity = minCapacity;
+    //newCapacity可能已经溢出，那么和MAX_ARRAY_SIZE对比一次，如果满足则设置最大容量
+    if (newCapacity - MAX_ARRAY_SIZE > 0)
+        newCapacity = hugeCapacity(minCapacity);
+    elementData = Arrays.copyOf(elementData, newCapacity);
+}
+
+private static int hugeCapacity(int minCapacity) {
+    if (minCapacity < 0) // overflow
+        throw new OutOfMemoryError();
+    return (minCapacity > MAX_ARRAY_SIZE) ?
+        Integer.MAX_VALUE :
+        MAX_ARRAY_SIZE;
+}
+```
+
+2.ArrayList非线程安全，Vector线程安全
+
+Vector的函数实现使用了synchronized关键词，确保的线程安全，相应损失是性能下降。
 
 
 
