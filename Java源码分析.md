@@ -7,17 +7,17 @@
 `Integer`在表示32位整数，其范围为`[Integer.MIN_VALUE, Integer.MAX_VALUE]`，下图的源码表示了常量的具体值。
 
 ```java
-	/**
-	 * A constant holding the minimum value an {@code int} can
-	 * have, -2<sup>31</sup>.
-     */
-    @Native public static final int   MIN_VALUE = 0x80000000;
+/**
+ * A constant holding the minimum value an {@code int} can
+ * have, -2<sup>31</sup>.
+ */
+@Native public static final int   MIN_VALUE = 0x80000000;
 
-    /**
-     * A constant holding the maximum value an {@code int} can
-     * have, 2<sup>31</sup>-1.
-     */
-    @Native public static final int   MAX_VALUE = 0x7fffffff;
+/**
+ * A constant holding the maximum value an {@code int} can
+ * have, 2<sup>31</sup>-1.
+ */
+@Native public static final int   MAX_VALUE = 0x7fffffff;
 ```
 
 
@@ -986,7 +986,7 @@ public Object clone() {
 
 ### Vector
 
-Vector是一个可变长数组，可以通过数值下标访问元素，vector对象创建之后在插入或者删除的过程中可以收缩也可以扩张。vector会维持一个capacity变量capacityIncrement变量，capacity表当前可用容量，capacityIncrement表当容量不足以存储数据时一次扩张的量。
+Vector是一个可变长数组，可以通过数值下标访问元素，vector对象创建之后在插入或者删除的过程中可以自动调整长度。vector会维持一个capacity变量和capacityIncrement变量，capacity表当前可用容量，capacityIncrement表当容量不足以存储数据时一次扩张的量。
 
 vector的默认容量是10，capacityIncrement的默认值是0。在创建vector对象时，可以同时指定这个两个参数，也可以仅指定capacity，或者不用任何参数使用默认配置。
 
@@ -996,9 +996,9 @@ Vector与ArrayList都继承了基类AbstractList，都实现了List接口，所�
 
 1.容量扩张量不同：
 
-ArrayList在容量扩张的时候需要指定一个最下容量，扩充之后的容量一定大于等于这个minCapacity，ArrayList的扩张量一次为原始容量的1.5倍。
+**ArrayList在容量扩张的时候需要指定一个最下容量，扩充之后的容量一定大于等于这个minCapacity，ArrayList的扩张量一次为原始容量的1.5倍。**
 
-Vector没有minCapacity的约束，空间塞满了就会扩张，一次扩张为原始容量的2倍。
+**Vector没有minCapacity的约束，空间塞满了就会扩张，一次扩张为原始容量的2倍。**
 
 
 
@@ -1038,7 +1038,7 @@ private static int hugeCapacity(int minCapacity) {
 
 2.ArrayList非线程安全，Vector线程安全
 
-Vector的函数实现使用了synchronized关键词，确保的线程安全，相应损失是性能下降。
+**Vector的函数实现使用了synchronized关键词，确保的线程安全，其缺点是性能下降。**
 
 
 
