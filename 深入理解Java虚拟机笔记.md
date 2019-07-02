@@ -182,7 +182,7 @@ java的版本输出：
 
 java虚拟机运行时数据区
 
-![](D:\notes\imgs\java-runtime-data-area.jpg)
+![](imgs/java-runtime-data-area.jpg)
 
 程序计数器：一块较小的内存，记录java程序字节码当前执行到的位置。程序计数器仅仅对java方法有效，当程序执行到native方法时，计数器将被置为空（undefined）。
 
@@ -200,7 +200,7 @@ java虚拟机运行时数据区
 
 java内存模型：
 
-![](D:\notes\imgs\java-mem-structure.jpg)
+![](imgs/java-mem-structure.jpg)
 
 **整个JVM内存大小=年轻代大小 + 年老代大小 + 持久代大小**
 
@@ -221,7 +221,7 @@ java内存模型：
 
 各个参数控制的内存区域：
 
-![](D:\notes\imgs\java-mem-and-parameter.jpg)
+![](imgs/java-mem-and-parameter.jpg)
 
 
 
