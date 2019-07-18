@@ -384,4 +384,4 @@ gcc --shared Hello.c -o libhello.so -fPIC -I /usr/lib/jvm/java-8-openjdk-amd64/i
 
 测试结果
 
-![](D:\notes\imgs\jni-output.png)
+![](imgs/jni-output.png)
