@@ -24,7 +24,7 @@ Java类实现代码所在目录：`openjdk/jdk/src/share/classes`
 
    
 
-2. 打开终端，进入jdk解压之后的根目录，可以看到`configure`文件![dirlist](imgs/dirlist.png)
+2. 打开终端，进入jdk解压之后的根目录，可以看到`configure`文件![dirlist](assets/dirlist.png)
 
    终端中执行`bash configure`，检查编译环境是否满足要求，执行过程中会在`openjdk`目录中生成一些文件。指定bootstrap-jdk的目录使用`--with-boot-jdk=`参数，命令为：
 
@@ -158,11 +158,11 @@ Finished building OpenJDK for target 'default'
 
 编译的结果会保存到openjdk根目录中的`openjdk/build `目录下，以下是我本次的编译结果，diz文件包含了调试信息。
 
-![Selection_002](imgs/Selection_002.png)
+![Selection_002](assets/Selection_002.png)
 
 java的版本输出：
 
-![](imgs/java-version-outpu.png)
+![](assets/java-version-outpu.png)
 
 
 
@@ -182,7 +182,7 @@ java的版本输出：
 
 java虚拟机运行时数据区
 
-![](imgs/java-runtime-data-area.jpg)
+![](assets/java-runtime-data-area.jpg)
 
 程序计数器：一块较小的内存，记录java程序字节码当前执行到的位置。程序计数器仅仅对java方法有效，当程序执行到native方法时，计数器将被置为空（undefined）。
 
@@ -200,7 +200,7 @@ java虚拟机运行时数据区
 
 java内存模型：
 
-![](imgs/java-mem-structure.jpg)
+![](assets/java-mem-structure.jpg)
 
 **整个JVM内存大小=年轻代大小 + 年老代大小 + 持久代大小**
 
@@ -221,7 +221,7 @@ java内存模型：
 
 各个参数控制的内存区域：
 
-![](imgs/java-mem-and-parameter.jpg)
+![](assets/java-mem-and-parameter.jpg)
 
 
 

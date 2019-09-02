@@ -335,7 +335,7 @@ int main()
 
 除默认流以外，CUDA 程序员还可创建并使用非默认 CUDA 流，此举可支持执行多个操作，例如在不同的流中并发执行多个核函数。多流的使用可以为您的加速应用程序带来另外一个层次的并行，并能提供更多应用程序优化机会。
 
-![](imgs/Selection_001.png)
+![](assets/Selection_001.png)
 
 **注意**：非默认流之间的核函数可以在时间上交叉执行，算是真正的并行，但是默认流的在执行核函数的时候会将非默认流的核函数阻断独占时间轴。
 
@@ -393,7 +393,7 @@ cudaStreamDestroy(stream); // Note that a value, not a pointer, is passed to `cu
 
 练习一的正确输出
 
-![](imgs/Screenshot from 2019-04-01 21-54-06.png)
+![](assets/Screenshot from 2019-04-01 21-54-06.png)
 
 
 

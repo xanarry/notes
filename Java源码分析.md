@@ -570,7 +570,7 @@ void expandCapacity(int minimumCapacity) {
 
 StringBuilder在value数组中插入元素的原理：
 
-![](imgs/StringBuilder_insert.png)
+![](assets/StringBuilder_insert.png)
 
 ```java
 public AbstractStringBuilder insert(int index, char[] str, int offset, int len) {
@@ -597,7 +597,7 @@ public AbstractStringBuilder insert(int index, char[] str, int offset, int len) 
 
 StringBuilder对value做replace操作的原理：
 
-![](imgs/stringbuilder_replace.png)
+![](assets/stringbuilder_replace.png)
 
 ```java
 public AbstractStringBuilder replace(int start, int end, String str) {
@@ -669,7 +669,7 @@ StringBuffer的所有方法都有**synchronized**关键词，因此该类保证�
 
 ## StringBuilder，StringBuffer，AbstractStringBuilder的关系
 
-![](imgs/StringBuilder.png)
+![](assets/StringBuilder.png)
 
 # Java集合框架
 
@@ -677,7 +677,7 @@ StringBuffer的所有方法都有**synchronized**关键词，因此该类保证�
 
 ### List类图
 
-![](imgs/list_oop.png)
+![](assets/list_oop.png)
 
 ### ArrayList
 正如其名字，ArrayList内部维护一个Object类型的数组，与一个size变量。
@@ -1046,7 +1046,7 @@ private static int hugeCapacity(int minCapacity) {
 
 LinkedList同时实现了List接口与queue接口，非线程安全。内部结构由双向链表实现，同时为每个结点配备了相对应的数值索引，需要注意的是该索引并没有保存到结点中，而是在**每次使用的时候通过遍历链表去查询相应索引所在的元素或者相应元素对应的索引**。内部为如图这样的结构：
 
-![](imgs/double-linkedlist.png)
+![](assets/double-linkedlist.png)
 
 LinkedList中Node结点的定义，Node是LinkedList的一个内部类。
 
@@ -1287,6 +1287,8 @@ B) 在链表尾部的操作
 
 
 ## Set
+
+![](assets/uml-set.png)
 
 ### HashSet
 

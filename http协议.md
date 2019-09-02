@@ -21,17 +21,17 @@ TCP/IP 协议族内预存了各类通用的应用服务。比如,FTP(File Transf
 
 OSI 7层网络协议结构图
 
-![](imgs/osi7.gif)
+![](assets/osi7.gif)
 
 
 
 4,5,7层网络结构之间的关系
 
-![](imgs/4-5-7layers.png)
+![](assets/4-5-7layers.png)
 
 一个http的请求流图
 
-![](imgs/httprequestflow.png)
+![](assets/httprequestflow.png)
 
 
 
@@ -39,7 +39,7 @@ OSI 7层网络协议结构图
 
 浏览器发出一个请求后网络的工作层次图
 
-![](imgs/http-request-flow.png)
+![](assets/http-request-flow.png)
 
 
 
@@ -49,7 +49,7 @@ OSI 7层网络协议结构图
 
 URI 格式
 
-![](imgs/uri-structure.png)
+![](assets/uri-structure.png)
 
 - 使用 http: 或 https: 等协议方案名获取访问资源时要指定协议类型。不区分字母大小写,最后附一个冒号(:)。
   也可使用 data: 或 javascript: 这类指定数据或脚本程序的方案名。
@@ -72,5 +72,5 @@ URI 格式
 
 HTTP 协议规定,请求从客户端发出,最后服务器端响应该请求并返回。换句话说,肯定是先从客户端开始建立通信的,服务器端在没有接收到请求之前不会发送响应。
 
-![](imgs/cs-structure.png)
+![](assets/cs-structure.png)
 
