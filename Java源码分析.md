@@ -1,5 +1,188 @@
 [TOC]
 
+# AbstractCollection类
+
+## add()
+
+抽象集合中并不能插入元素。硬插会抛出异常。
+
+```java
+public boolean add(E e) {
+    throw new UnsupportedOperationException();
+}
+```
+
+
+
+## contains()
+
+`Collection`组织下的对象为线性结构，所以搜索默认采用的线性搜索的方法。如果是hash或者binary tree，子类重写该函数就能实现更高效的搜索方法。
+
+```java
+public boolean contains(Object o) {
+    Iterator<E> it = iterator();
+    if (o==null) {
+        while (it.hasNext())
+            if (it.next()==null)
+                return true;
+    } else {
+        while (it.hasNext())
+            if (o.equals(it.next()))
+                return true;
+    }
+    return false;
+}
+```
+
+
+
+## boolean containsAll(Collection<?> c)
+
+对每个`c`中的元素执行一次`contains`，时间复杂度为O($N^2$)
+
+
+
+## remove()
+
+`Collection`中，`null`也是合法的元素，所以在删除的时候需要考虑到`null`的感受。删除同样是遍历`Collection`的迭代器，找到目标元素之后通过迭代器将其删除。
+
+```java
+public boolean remove(Object o) {
+    Iterator<E> it = iterator();
+    if (o==null) {
+        while (it.hasNext()) {
+            if (it.next()==null) {
+                it.remove();
+                return true;
+            }
+        }
+    } else {
+        while (it.hasNext()) {
+            if (o.equals(it.next())) {
+                it.remove();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+```
+
+
+
+## removeAll
+
+遍历collection，若果当前元素**属于**需要被删除的元素，那么直接通过迭代器删除。
+
+```java
+public boolean removeAll(Collection<?> c) {
+    Objects.requireNonNull(c);
+    boolean modified = false;
+    Iterator<?> it = iterator();
+    while (it.hasNext()) {
+        if (c.contains(it.next())) {
+            it.remove();
+            modified = true;
+        }
+    }
+    return modified;
+}
+```
+
+
+
+## retainAll()
+
+遍历collection，若果当前元素**不属于**需要被删除的元素，那么直接通过迭代器删除。
+
+```java
+public boolean retainAll(Collection<?> c) {
+    Objects.requireNonNull(c);
+    boolean modified = false;
+    Iterator<E> it = iterator();
+    while (it.hasNext()) {
+        if (!c.contains(it.next())) {
+            it.remove();
+            modified = true;
+        }
+    }
+    return modified;
+}
+```
+
+
+
+`retailAll`与`removeAll`除了删除的判断条件正好相反，其他部分是一样的代码，
+
+
+
+## toArray()
+
+Collection无序、允许NULL，允许重复元素，**所以基本思路大概就是，定义一个数组，然后遍历集合元素**，将遍历的每个元素放到新定义的数组中，然后返回。
+
+实现分成了三个部分：
+
+1.数组的实际长度 == size()返回的长度
+
+​	**循环size()个元素之后，检查如果没有剩余元素，立即返回**
+
+2.数组的实际长度  > size()返回的长度
+
+​	**在复制过程中，如果在循环过程中结束，立即返回**
+
+3.数组的实际长度 < size()返回的长度
+
+​	**在复制size()个元素之后，检查如果还有剩余元素，将数组长度len扩大到len+len/2+1，再继续复制。重复这个过程，知道没有剩余元素。**
+
+
+
+存在以上三种情况的原因在于：**`size()`函数是由子类实现的，所以我们并不清楚`size()`返回的是否就是真实的元素数目（虽然这个可能性比较小，但是有可能返回的数比集合内的数目要大或者小）。为了让我们的函数有更好的容错性，代码中要考虑到不一致的情况。**
+
+```java
+public Object[] toArray() {
+    // Estimate size of array; be prepared to see more or fewer elements
+    Object[] r = new Object[size()];
+    Iterator<E> it = iterator();
+    for (int i = 0; i < r.length; i++) {
+        if (! it.hasNext()) // fewer elements than expected
+            return Arrays.copyOf(r, i); //情况3，在循环中遇到终点，立即截断。
+        r[i] = it.next();
+    }
+    
+    //情况1,2。如果是情况1，直接返回；如果是2，则调用finishToArray
+    return it.hasNext() ? finishToArray(r, it) : r; 
+}
+
+@SuppressWarnings("unchecked")
+private static <T> T[] finishToArray(T[] r, Iterator<?> it) {
+    int i = r.length;
+    while (it.hasNext()) {
+        int cap = r.length;
+        //如果数组已经被填充满，但是还有剩余元素需要添加
+        if (i == cap) {
+            //将数组的长度len扩充为len+len/2+1
+            int newCap = cap + (cap >> 1) + 1;
+            // overflow-conscious code
+            if (newCap - MAX_ARRAY_SIZE > 0)
+                newCap = hugeCapacity(cap + 1);
+            r = Arrays.copyOf(r, newCap);
+        }
+        //将元素一次复制到扩充之后的数组中
+        r[i++] = (T)it.next();
+    }
+    // trim if overallocated
+    return (i == r.length) ? r : Arrays.copyOf(r, i);
+}
+
+private static int hugeCapacity(int minCapacity) {
+    if (minCapacity < 0) // overflow
+        throw new OutOfMemoryError("Required array size too large");
+    return (minCapacity > MAX_ARRAY_SIZE) ? Integer.MAX_VALUE : MAX_ARRAY_SIZE;
+}
+```
+
+
+
 
 
 # java.lang.Integer类
@@ -1290,49 +1473,25 @@ B) 在链表尾部的操作
 
 ![](assets/uml-set.png)
 
+`Set`中的迭代器仅仅使用map的key的迭代器，代码如下：
+
+```java
+public Iterator<E> iterator() {
+	return map.keySet().iterator();
+}
+```
+
+而`Set`中的`toArray()`函数则继承与`AbostractCollection`, 该函数的实现新建一个数组，然后通过迭代器遍历`Collection`中的元素并将其添加到数组中。
+
+
+
 ### HashSet
 
-#### 插入
-
-
-
-#### 删除
-
-
-
-#### 修改
-
-
-
-#### 查看
-
-
-
-#### 迭代器
-
-
+HashSet内部使用的HashMap，仅仅使用了HashMap的key，value则使用的一个Object类的实例，所有entry的value都指向这同一个实例。
 
 ### TreeSet
 
-
-
-#### 插入
-
-
-
-#### 删除
-
-
-
-#### 修改
-
-
-
-#### 查看
-
-
-
-#### 迭代器
+TreeSet内部使用的TreeMap，仅仅使用了TreeMap的key，value则使用的一个Object类的实例，所有entry的value都指向这同一个实例。
 
 
 
