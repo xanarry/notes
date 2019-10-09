@@ -1,4 +1,4 @@
-# java访问控制符的意义与控制范围
+# ajava访问控制符的意义与控制范围
 
 |               | 类内部 | 子类 | 本包 | 外部包 |
 | :-----------: | :----: | :--: | :--: | :----: |
@@ -420,4 +420,187 @@ gcc --shared Hello.c -o libhello.so -fPIC -I /usr/lib/jvm/java-8-openjdk-amd64/i
 **弱引用（Week Reference）**：弱引用也是用来描述非必需对象的，但是它的强度比软引用更弱一些，被弱引用关联的对象只能生存到下次垃圾回收发生之前。当垃圾回收器工作时，无论当前内存是否足够，都会回收掉只被弱引用关联的对象。
 
 **虚引用（Phantom Reference）**：虚引用也称为幽灵引用或者幻影引用，它是最弱的一种引用关系。一个对象是否有虚引用的存在，完全不会对其生存时间构成影响，也无法通过虚引用来去的一个对象实例。为对象设置虚引用关联的唯一目的就是能在这个对象被垃圾回收器回收时收到一个系统通知。
+
+
+
+
+
+# Java的异常处理以与finally块
+
+在一个处理异常的代码中，如果代码本身，每个异常处理的代码都有return语句。
+
+如果没有finally：如果没有异常发生则正常返回，如果发生了异常，就在处理异常的代码中返回。
+
+如果有finally：业务代码块和处理异常代码块中的return语句都将失效，虚拟机会把finally中的语句插入到前面各个return语句之前。
+
+来看一个具体代码的示例：
+
+> 1.带finally的代码
+>
+> ```java
+> public static int doJob(int a, int b) {
+>     int c = 0;
+>     try {
+>         c = NumOpt.div(a, b);
+>         System.out.println("do job");
+>         return c;
+>     } catch (FloatEception e) {
+>         System.out.println(e.getMessage());
+>         return 0x1111;
+>     } catch (NegetiveEception e) {
+>         System.out.println(e.getMessage());
+>         return 0x2222;
+>     } finally {
+>         System.out.println("do finally");
+>         return 0x9999;
+>     }
+> }
+> ```
+>
+> 
+>
+> 2.不带finally的代码
+>
+> ```java
+> public static int doJob(int a, int b) {
+>     int c = 0;
+>     try {
+>         c = NumOpt.div(a, b);
+>         System.out.println("do job");
+>         return c;
+>     } catch (FloatEception e) {
+>         System.out.println(e.getMessage());
+>         return 0x1111;
+>     } catch (NegetiveEception e) {
+>         System.out.println(e.getMessage());
+>         return 0x2222;
+>     }
+> }
+> 
+> ```
+
+
+
+下面来看上面两个函数的字节码有什么区别
+
+> 1.带finally函数的字节码
+>
+> ```assembly
+> #调用NumOpt.div(a, b);
+> iconst_0        
+> istore_2        
+> iload_0         
+> invokestatic    #7   // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+> iload_1         
+> invokestatic    #7   // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+> invokestatic    #8   // Method com/test/NumOpt.div:(Ljava/lang/Integer;Ljava/lang/Integer;)I
+> istore_2        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> ldc             #10  // String do job
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> iload_2         
+> #调用NumOpt.div(a, b) 结束在return c;之前
+> #插入finally代码块
+> istore_3        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> ldc             #12  // String do finally
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> ldc             #13  // int 39321 -> 0x9999
+> ireturn     
+> #finally代码块执行介绍，返回finally中的值
+> 
+> 
+> #FloatEception异常块代码
+> astore_3        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> aload_3         
+> invokevirtual   #14  // Method com/test/FloatEception.getMessage:()Ljava/lang/String;
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> sipush          4369 //0x1111
+> #FloatEception异常块代码介绍，没有返回指令
+> #插入finally代码块
+> istore          4    
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> ldc             #12  // String do finally
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> ldc             #13  // int 39321 -> 0x9999
+> ireturn        
+> #finally代码块执行介绍，返回finally中的值
+> 
+> 
+> #NegetiveEception异常块代码
+> astore_3        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> aload_3         
+> invokevirtual   #15  // Method com/test/NegetiveEception.getMessage:()Ljava/lang/String;
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> sipush          8738 //0x2222
+> #NegetiveEception异常块代码介绍，没有返回指令
+> #插入finally代码块
+> istore          4    
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> ldc             #12  // String do finally
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> ldc             #13  // int 39321
+> ireturn         
+> #finally代码块执行介绍，返回finally中的值
+> 
+> #finally代码块
+> astore          5    
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> ldc             #12  // String do finally
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> ldc             #13  // int 39321
+> ireturn         
+> ```
+>
+> 
+>
+> 2.不带finally函数的字节码
+>
+> ```assembly
+> #调用NumOpt.div(a, b);
+> iconst_0        
+> istore_2        
+> iload_0         
+> invokestatic    #7   // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+> iload_1         
+> invokestatic    #7   // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+> invokestatic    #8   // Method com/test/NumOpt.div:(Ljava/lang/Integer;Ljava/lang/Integer;)I
+> istore_2        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> ldc             #10  // String do job
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> iload_2 
+> ireturn  //有返回值
+> 
+> #FloatEception异常块代码
+> astore_3        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> aload_3         
+> invokevirtual   #12  // Method com/test/FloatEception.getMessage:()Ljava/lang/String;
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> sipush          4369 
+> ireturn  //有返回值  
+> 【ireturn保留，并没有在此插入finally的代码】
+> 
+> #NegetiveEception异常块代码
+> astore_3        
+> getstatic       #9   // Field java/lang/System.out:Ljava/io/PrintStream;
+> aload_3         
+> invokevirtual   #13  // Method com/test/NegetiveEception.getMessage:()Ljava/lang/String;
+> invokevirtual   #11  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+> sipush          8738 
+> ireturn  //有返回值
+> 【ireturn保留，并没有在此插入finally的代码】
+> 
+> ```
+
+
+
+# 类中静态变量的引用
+
+类中的静态变量，通过`类名.变量名`与`实例.变量名`都能访问到其值。但由于静态变量一定是先于实例存在，所以惯例是通过类名访问静态变量。
+
+
 
