@@ -1499,6 +1499,8 @@ TreeSet内部使用的TreeMap，仅仅使用了TreeMap的key，value则使用的
 
 ### HashMap
 
+
+
 #### 插入
 
 
@@ -1521,25 +1523,108 @@ TreeSet内部使用的TreeMap，仅仅使用了TreeMap的key，value则使用的
 
 ### TreeMap
 
+TreeMap背后的数据结构为红黑树，选择红黑树的原因在于红黑树相对二叉树或者AVL树有更好的平衡性质。二叉树在输入有序数据的情况下， 会退化成为一个链表，时间复杂度退化为O(N)，完全失去了二叉搜索树的优良特性，并且其形状根据输入的数据不同产生不同的形状；AVL树保证了二叉树的绝对平衡，也就是左右子树的高度最多相差一，绝对平衡保证了数据访问的高效性，但是为了为了维护绝对平衡的状态，在从树中插入和删除元素时，需要较高的时间成本。红黑树恰好在时间成本和绝对平衡之间做了一个平衡，红黑树正如其名，树中的每个节点被标记为红、黑两种颜色，且具有以下特点：
+
+1. 节点是红色或者黑色
+2. 根节点是黑色
+3. 所有叶节点是黑色
+4. 每个红色节点的两个子节点都是黑色（每个叶子节点到根节点的所有路径上不能有两个连续的红色节点）
+5. 从任一节点到其每个叶子节点的所有简单路径都包含相同数目的黑色节点
+
+这些特性或者说是条件使得红黑树最坏情况下，从跟节点到叶节点的最长路径不大于最短路径的两倍，这样的数就是大致平衡的了。
+
+TreeMap中的属性如下：
+
+Comparator<? super K> comparator;
+
+Entry<K,V> root;
+
+int size = 0; The number of entries in the tree
+
+private transient int modCount = 0; The number of structural modifications to the tree.
+
+```java
+static final class Entry<K,V> implements Map.Entry<K,V> {
+    K key;    //键，数据检索依据
+    V value;  //值，数据本身
+    boolean color = BLACK; //节点颜色标记，false表红色，true表黑色
+    Entry<K,V> left;     //左子树
+    Entry<K,V> right;    //右子树
+    Entry<K,V> parent;   //父节点
+}
+```
 
 
-#### 插入
 
 
 
-#### 删除
+先看TreeMap中私有函数实现，这些私有函数是公共接口的支撑。
+
+```java
+final Entry<K,V> getEntry(Object key) {
+    // Offload comparator-based version for sake of performance
+    if (comparator != null)
+        return getEntryUsingComparator(key);
+    if (key == null)
+        throw new NullPointerException();
+    @SuppressWarnings("unchecked")
+    Comparable<? super K> k = (Comparable<? super K>) key;
+    Entry<K,V> p = root;
+    while (p != null) {
+        int cmp = k.compareTo(p.key);
+        if (cmp < 0)
+            p = p.left;
+        else if (cmp > 0)
+            p = p.right;
+        else
+            return p;
+    }
+    return null;
+}
+```
 
 
 
-#### 修改
+下面是TreeMap中提供的接口列表，我们根据接口列表去分析每个列表在java源码中的内部实现。
 
 
 
-#### 查看
-
-
-
-#### 迭代器
+void	clear()
+          Removes all mappings from this TreeMap.
+ Object	clone()
+          Returns a shallow copy of this TreeMap.
+ Comparator	comparator()
+          Returns the comparator used to order this TreeMap, or null if this TreeMap uses its keys' natural order.
+ boolean	containsKey(Object key)
+          Returns true if this TreeMap contains a mapping for the specified key.
+ boolean	containsValue(Object value)
+          Returns true if this Map maps one or more keys to the specified value.
+ Set	entrySet()
+          Returns a Set view of the mappings contained in this Map.
+ Object	firstKey()
+          Returns the first (lowest) key currently in this SortedMap.
+ Object	get(Object key)
+          Returns the value to which this TreeMap maps the specified key.
+ SortedMap	headMap(Object toKey)
+          Returns a view of the portion of this TreeMap whose keys are strictly less than toKey.
+ Set	keySet()
+          Returns a Set view of the keys contained in this TreeMap.
+ Object	lastKey()
+          Returns the last (highest) key currently in this SortedMap.
+ Object	put(Object key, Object value)
+          Associates the specified value with the specified key in this TreeMap.
+ void	putAll(Map map)
+          Copies all of the mappings from the specified Map to this TreeMap These mappings will replace any mappings that this TreeMap had for any of the keys currently in the specified Map.
+ Object	remove(Object key)
+          Removes the mapping for this key from this TreeMap if present.
+ int	size()
+          Returns the number of key-value mappings in this TreeMap.
+ SortedMap	subMap(Object fromKey, Object toKey)
+          Returns a view of the portion of this TreeMap whose keys range from fromKey, inclusive, to toKey, exclusive.
+ SortedMap	tailMap(Object fromKey)
+          Returns a view of the portion of this TreeMap whose keys are strictly less than toKey.
+ Collection	values()
+          Returns a Collection view of the values contained in this TreeMap.
 
 
 
