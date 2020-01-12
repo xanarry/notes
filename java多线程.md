@@ -603,3 +603,444 @@ class CASBasedCounter {
 
 # 线程间的协作
 
+多线程编程中，不同的线程之间往往需要相互协作共同完成一个任务，不同的线程之间如何进行协作，Java提供了相关的处理机制。
+
+
+
+## wait
+
+一个线程因其执行目标操作所需要的保护条件未满足而被暂停的过程就被称为等待（**wait**）。执行Object.wait()后，其执行线程被暂停，生命周期的状态转换为WAITING。
+
+### 使用wait的模板代码
+
+在执行wait()的对象与临界区加锁的对象为同一对象时（**必须满足此条件，否则会报`java.lang.IllegalMonitorStateException`异常**），可以根据需求将wait()放在代码中的任何位置，以达到暂停线程的目的。
+
+
+
+通常情况下，使用wait函数时候的代码形式如下：
+
+```java
+synchronize (someObject) {
+    while (保护条件不成立) {
+        someObject.wait(); //让线程等待
+    }
+    doActions();  //条件已经满足，执行后续操作
+}
+```
+
+对于以上模板代码：
+
+1. **线程只有在持有一个对象内部锁的情况下，才能够调用这个对象的wait()方法**，也就是synchronize中的对象与wait所属的对象必须为同一对象，在模板代码中表现为第一行的someObject与第三行的someObject必须相同，否则虚拟机会报`java.lang.IllegalMonitorStateException`异常。Object.wait()总是在临界区以内。
+2. 同一对象的同一个方法可以被多个线程执行，因此在**一个对象上可能存在多个等待线程**（对个线程调用的该对象上的wait方法）。
+3. **wait方法会以原子操作模式暂停当前执行线程并释放当前对象的内部锁**，此时wait方法并没有返回。
+4. 被唤醒的线程需要在再次获取内部锁的情况下（暂停线程时释放了内部锁），才能继续执行wait方法中剩余的指令，直到wait方法返回。
+5. **保护条件的判断与wait方法总是应该放在临界区的一个循环中**。因为存在这样的情况：在线程被唤醒后，可能存在其他线程修改了保护条件再次不成立，因此，通过循环在wait方法返回后再次判断条件，成立的情况下才继续执行后面的doActions，保证程序的正确性。
+
+
+
+### wait方法的背后的逻辑
+
+```java
+public void wait() {
+    if (!Thread.holdsLock(this)) //若果线程没有持有对象内部锁调用wait,抛出异常
+        throws new IllegalMonitorStateException();
+
+    if (当前对象不在等待集中)
+        addWaitSet(Thread.concurrentThread());//将当前线程假如等待集
+
+    //原子操作
+    atomic {
+        releaseLock(this); //释放当前对象内部锁
+        block(Thread.concurrentThread());//暂且当前线程
+    }
+
+    aquireLock(this); //再次申请当前对象内部锁
+    removeFromWaitSet(Thread.concurrentThread());//将线程从当前对象等待集中移除
+}
+```
+
+
+
+wait方法流程图
+
+![](assets/wait.png)
+
+
+
+
+
+## notify/notifyAll
+
+一个线程更新了系统的状态，使得其他线程所需要的保护条件得以满足的时候唤醒哪些被暂停线程的过程就被称为通知（**notify**）
+
+- **notify()**唤醒相应对象上等待的**任意一个线程**。
+- **notifyAll()**唤醒相应对象上等待的**所有线程**。
+- **等待线程和通知线程必须调用同一个对象wait系列方法、notify系列方法**才能正确实现等待与通知。
+
+
+
+
+
+### 使用notify的模板代码
+
+```java
+synchronize (someObject) {
+    updateState();       //更新等待线程涉及的共享变量
+    someObject.notify(); //唤醒其他线程
+}
+```
+
+1. **线程只有在持有一个对象内部锁的情况下才能够调用该对象的notify方法**。
+2. 由于”线程只有在持有一个对象内部锁的情况下才能够调用该对象的notify方法“，所以要求Object.wait()暂停其执行线程的同时，必须释放相应的内部锁，否则线程无法执行通知操作。
+3. notify本身不会释放线程持有的对象内部锁，因此线程在执行完notify之后应保证释放了对象的内部锁。
+
+
+
+
+
+
+
+## wait/notify可能存在的问题
+
+保护条件、同步对象、wait、notifyAll之间的关系结构图。
+
+![](assets/wait-notifyAll.jpg)
+
+- 过早唤醒：当多个线程同步在一个对象上，且通知线程使用了notifyAll发出通知时，可能发生过早唤醒的问题。因为notifyAll一次性通知了所有的等待线程，线程唤醒之后，如果保护条件满足，则可以正常向下执行。但如果被唤醒的线程使用的保护条件并不满足的话，该线程仍然需要继续等待条件满足。
+
+  如上图：W1，W2，W3等待在同步对象someObject上，W1，W2使用相同`保护条件1`，W3使用`保护条件2`，N1更新能`保护条件1`，且通知所有等待线程。当N1发出通知值，W1，W2，W3均被唤醒，但只有W1，W2的保护条件成立，可以正常向后执行；当W3的保护条件并不成立，需要继续等待。
+
+- 信号丢失：线程执行wait方法时，没有对共享条件进行检测，在通知线程已经发出了通知且共享条件已经满足的情况下仍然执行了wait方法。这种情况下线程将无休止等待，知道收到下一次通知。对于这种场景，只要将对保护条件的判读和wait方法放在一个循环语句中就可以避免信号丢失的问题。
+
+  信号丢失的另一个场景是本该调用notifyAll的地方却调用了notify，导致通知信号没法通知所有等待线程。这种是代码的错误，编程的时候需要提高注意。
+
+- 欺骗性唤醒：等待线程可能在没有任何其他线程执行notify、notifyAll方法的情况下被唤醒。出现这种问题的概率极低，同时操作系统也允许这样的错误出现。同样，将将对保护条件的判读和wait方法放在一个循环语句中就可以避免。
+
+
+
+
+
+
+## wait/notify开销
+
+wait与notify都是在临界区中运行，所以至少存在一次锁的申请与释放，而锁的申请与释放可能导致上下文的切换。无论是锁的申请与释放还是上下文切换都存在开销。
+
+另外，过早唤醒会导致额外的上下文切换，因为过早唤醒的线程仍然要继续等待，即再次经历被暂停与唤醒的过程。因此，在保证程序正确性的前提下，使用notify替换notifyAll能减少上下文次数，从而降低开销。
+
+
+
+
+
+
+
+## wait/notify示例
+
+### 单缓冲区生产者-单消费者（两个线程交替执行）
+
+思想为启动两个线程，设置一个状态变量标志当前任务应该就那个线程来完成，线程在开始任务前检查标志变量，判断是不是该它运行，如果是，则运行，然后修改状态变量，发送通知；否则，暂停线程，等待通知。
+
+```java
+public class Test {
+    private static volatile String order = "A"; //共享状态变量
+    private static Runnable runnable = new Runnable() {
+        @Override
+        public void run() {
+            while (true) {
+                synchronized (this) {
+                    if (!Thread.currentThread().getName().equals(order)) {
+                        try {
+                            wait(); //等待通知
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    //做任务
+                    System.out.println(Thread.currentThread().getName() + " is working");
+                    
+                    //更新状态变量
+                    order = Thread.currentThread().getName().equals("A") ? "B" : "A";
+                    notify();//通知线程
+                }
+            }
+        }
+    };
+
+    public static void main(String argv[]) throws Exception {
+        //启动两个线程
+        new Thread(runnable, "A").start();
+        new Thread(runnable, "B").start();
+    }
+}
+
+```
+
+
+
+### 单缓冲区生产者-多消费者
+
+在下面代码中，由于`consumer`与`producer`中的`this`指向的是不同的对象，因为只有通知与等待线程是同步在同一个对象上才生效，所以单独定义了`producerLock`对象作为锁。
+
+```java
+public class Test {
+    private static volatile String product = null; //共享状态变量
+    private static final Object producerLock = new Object(); //设置锁
+    private static Runnable consumer = () -> {
+        while (true) {
+            synchronized (producerLock) {
+                while (product == null) { //没有可用产品，等待
+                    try {
+                        producerLock.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                //产生了新的产品，消费掉
+                System.out.println(" -> " + Thread.currentThread().getName() + " consumes " + product);
+                product = null;
+                producerLock.notify();//通知生成消费
+            }
+        }
+    };
+
+    private static Runnable producer = () -> {
+        for (int i = 1; i <= 10; i++) {
+            synchronized (producerLock) {
+                while (product != null) { //产品还没有被消费
+                    try {
+                        producerLock.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                product = "product" + i; // 产品被消费，重新生产
+                System.out.print("new " + product);
+                producerLock.notifyAll(); //通知线程消费
+            }
+        }
+    };
+
+    public static void main(String argv[]) {
+        //启动一个消费者线程, 使用notifyAll通知消费
+        new Thread(producer, "B").start();
+
+        for (int i = 1; i <= 3; i++) //启动五个消费线程
+            new Thread(consumer, "consumer" + i).start();
+    }
+}
+```
+
+
+
+### join通过wait的实现
+
+`void join(long millis)`是最基础的实现，`void join()`即`join(0)`
+
+```java
+public final synchronized void join(long millis) throws InterruptedException {
+        long base = System.currentTimeMillis();//获取当前时间
+        long now = 0;
+
+        if (millis < 0) {  //不允许参数为负值
+            throw new IllegalArgumentException("timeout value is negative");
+        }
+
+        if (millis == 0) { //如果参数为0
+            while (isAlive()) {
+                wait(0);//暂停当前线程，无限等待，直到目标线程退出
+            }
+        } else {
+            while (isAlive()) {
+                long delay = millis - now; //计算需要等待的时间上限
+                if (delay <= 0) {
+                    break; //已经超时，返回
+                }
+                wait(delay); //等待还剩下的时间
+                now = System.currentTimeMillis() - base; //超时后更新时间
+            }
+        }
+    }
+```
+
+
+
+### CountdownLatch简单实现
+
+```java
+class MyCountdownLatch {
+    private volatile int count;  //设置计数器
+    public MyCountdownLatch(int n) {
+        count = n;  //初始化计数器
+    }
+
+    public synchronized void countdown() {
+        count--;    //向下计数
+        if (count == 0) {
+            notifyAll();//下降到0，发出通知
+        }
+    }
+
+    public synchronized void await() {
+        while (count > 0) {
+            try {
+                wait(); //当计数器大0时，等待
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
+
+
+
+
+
+
+
+## join
+
+Thread.join()可以使当前线程等待目标线程结束之后再继续运行，join的另一个版本允许指定一个等待时间，如果目标线程没有在指定时间内终止，那么当前线程也会继续运行。
+
+
+
+
+
+
+
+
+
+## 条件变量
+
+wait/notify过于底层，并且存在过早唤醒的问题以及wait无法区分其返回是由于收到了notify通知还是等待超时。JDK1.5之后，`java.util.concurent.locks.Condition`接口为解决过早唤醒的问题提供了支持，并能区分唤醒是由于线程的通知还是等待超时。
+
+Condition接口定义了await方法、signal方法和signalAll方法分别相当于Object.wait、Object.notify、Object.notifyAll方法。
+
+
+
+### 条件变量的使用模板
+
+```java
+class ConditionUsage {
+    private final Lock lock = new ReentranLock();  //创建同步对象
+    //创建保护条件，等待线程加入到condition的等待集中，而不是lock
+    private final Condition condition = lock.newCondition();
+
+    public void useAwait() throws InterruptedException {
+        lock.lock(); //申请锁
+        try {
+            while (保护条件不成立) {
+                condition.await(); //等待条件成立
+            }
+            doActions();//执行相关操作
+        } finally {
+            lock.unlock(); //释放锁
+        }
+    }
+
+    public void useSignal() throws InterruptedException {
+        lock.lock(); //申请锁
+        try {
+            updateState();//更新共享变量
+            condition.signal();//通知等待线程
+        } finally {
+            lock.unlock(); //释放锁
+        }
+    }
+}
+```
+
+`lock.newCondition()`的返回方法就是一个Condition实例，因此调用任意一个显示锁实例的newCondition方法可以创建一个相应的Condition接口，Condition.await/signal方法也要求执行线程持有创建该Condition实例的显示锁。Condition实例也称为条件变量或者条件队列，每个Condition实例内部都维护了一个用于存储等待线程的队列。**使用不同保护条件的等待线程调用不同条件变量的await方法来实现其等待，放入不同条件变量下的等待队列**。
+
+可见，条件变量的使用模式与wait/notify一致。区别在于wait/notify使用内部锁，而条件变量使用显示锁，另外，wait/notify所有的线程无论共享条件是什么，通通同步在同一个对象上，也正是这一点导致了过早唤醒的问题。
+
+- 过早唤醒的解决：**条件变量通过让使用不同保护条件的等待线程调用不同条件变量的await方法来实现其等待，并让通知线程在更新了共享变量之后，仅调用涉及了这些共享变量保护条件所对应条件变量的signal/signalAll方法**，避免了产生过早唤醒的问题。
+- 区分超时还是唤醒：`Condition.awaitUntil(Date deadline)`可以用来实现带时间限制的等待，deadline参数表示等待的最后期限，超过了这个时间点就表示超时。`awaitUntil`的返回值为`true`时，表示等待尚未达到最后期限并收到了其他线程的通知；返回值为`false`时，表示超时返回。
+
+
+
+**注意：由于条件变量的使用可以避免过早唤醒的问题，因此，其导致的上下文切换次数要比wait/notify更少**
+
+
+
+
+
+### await/signal示例
+
+
+
+
+
+## CountdownLatch
+
+
+
+
+
+
+
+## CyclicBarrier（栅栏）
+
+
+
+
+
+## semaphore（信号量）
+
+
+
+
+
+## 双缓冲与Exchanger
+
+
+
+
+
+## 线程的中断机制
+
+
+
+
+
+## 线程停止
+
+
+
+
+
+
+
+# 线程的活性故障
+
+
+
+
+
+# 线程管理
+
+
+
+# 异步编程
+
+
+
+
+
+# 多线程编程的硬件基础与Java内存模型
+
+
+
+
+
+
+
+
+
+# 多线程程序的性能调校
+
+
+
+
+
