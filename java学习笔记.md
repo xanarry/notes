@@ -1,11 +1,13 @@
-# ajava访问控制符的意义与控制范围
+# java访问控制符的意义与控制范围
 
-|               | 类内部 | 子类 | 本包 | 外部包 |
-| :-----------: | :----: | :--: | :--: | :----: |
-|  **public**   |   Y    |  Y   |  Y   |   Y    |
-|  **default**  |   Y    |  Y   |  Y   |        |
-| **protected** |   Y    |  Y   |      |        |
-|  **private**  |   Y    |      |      |        |
+|               | 同一个类 | 同一个包 | 不同包的子类 | 不同包的非子类 |
+| :-----------: | :------: | :------: | :----------: | :------------: |
+|  **public**   |    Y     |    Y     |      Y       |       Y        |
+| **protected** |    Y     |    Y     |      Y       |                |
+|  **default**  |    Y     |    Y     |              |                |
+|  **private**  |    Y     |          |              |                |
+
+使用protected修饰符时，对于跨包继承的子类也能访问protected修饰的内容，但是default不行。**所以protected比默认更开放一点**
 
 
 
@@ -601,6 +603,332 @@ gcc --shared Hello.c -o libhello.so -fPIC -I /usr/lib/jvm/java-8-openjdk-amd64/i
 # 类中静态变量的引用
 
 类中的静态变量，通过`类名.变量名`与`实例.变量名`都能访问到其值。但由于静态变量一定是先于实例存在，所以惯例是通过类名访问静态变量。
+
+
+
+# 代理与动态代理
+
+代理模式使用一个代理接口，表示需要被代理执行的有哪些方法。代理对象与被代理对象都要实现该接口。被代理对象在接口中实现具体的操作；代理对象持有一个代理对象的引用，在接口中调用被代理对象同名的接口方法，此外可以在调用前后做更多额外操作。
+
+
+
+一个静态代理和动态代理的例子：
+
+```java
+interface Work { //定义方法接口
+    void doSomething();
+    void getMoney(int m);
+}
+
+class Worker implements Work{  //实际做工作的对象
+    @Override
+    public void doSomething() {
+        System.out.println("do something");
+    }
+
+    @Override
+    public void getMoney(int m) {
+        System.out.println("get money: " + m);
+    }
+}
+
+
+class WorkerProxy implements Work { //普通代理（静态代理）
+    private Work proxied; //持有一个被代理的对象
+    WorkerProxy(Work work) {
+        this.proxied = work;
+    }
+
+    @Override
+    public void doSomething() { 
+        //代理被代理的对象做工作，（调用被代理对象的方法，在方法前后可以做更多额外的工作）
+        System.out.println("before do something");
+        proxied.doSomething();
+    }
+
+    @Override
+    public void getMoney(int m) {
+        System.out.println("before get money");
+        proxied.getMoney(m);
+    }
+}
+
+//使用反射，使用更加灵活的动态代理方法
+class DynamicProxyHandler implements InvocationHandler {
+    private Object proxied; //持有一个被代理的对象
+    DynamicProxyHandler(Object proxied) {
+        this.proxied = proxied;
+    }
+
+    /*
+     * proxy:  代理对象
+     * method: 被调用的方法
+     * args:   被调用方法的参数列表
+     */
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        // 定义代理方式
+        System.out.println(proxy.getClass());
+        System.out.println("before " + method);
+        return method.invoke(proxied, args); //执行被代理对象的方法
+    }
+}
+
+class PRT {
+    public static void main(String[] args) throws IllegalAccessException, InstantiationException, ClassNotFoundException {
+        doJob(new Worker()); //原始对象
+        doJob(new WorkerProxy(new Worker())); //使用静态代理
+        System.out.println("--------------");
+        
+        //使用动态代理，
+        Work proxy = (Work) Proxy.newProxyInstance(
+            	Work.class.getClassLoader(), //一个类加载器
+                new Class[] {Work.class},    //希望该代理实现的接口，可以实现多个接口
+                new DynamicProxyHandler(new Worker())); //被代理的对象
+        doJob(proxy);
+    }
+
+    static void doJob(Work work) {
+        work.doSomething();
+        work.getMoney();
+    }
+}
+```
+
+
+
+
+
+
+
+# 其他
+
+java可变参数的本质是传入一个数组，当一个方法接收可变参数时，如果调用者传入的多个参数，那么编译器将这写参数构造为数组给方法传入，如果调用方法时传入的就是一个数组，那么数组中的每个元素都是方法的参数；如果传入数组之后还跟有其他参数，数组本身本当成一个参数处理。**可变参数也可以不传入任何参数**
+
+
+
+finalize方法在垃圾回收器准备回收某个对象时，会调用其finalize方法一次，并在下次垃圾回收动作发生时才真正回收掉该对象的空间，finalize方法在对象的生命周期中只会被调用一次。但是finalize方法不一定一定会被出发，应为有的对象可能在程序的运行期间内都没有被回收。
+
+finalize的一个应用场景是如果java使用的本地代码申请了内存，由于垃圾回收器没法回收本地方法申请的内存，可以在finalize方法中使用本地方法释放。
+
+
+
+执行`System.gc()`，只是通知GC建议运行，但是Java语言规范并不保证GC一定会执行。
+
+
+
+每一个class定义中只要有定义main方法，那么只要在可访问域，都可以执行`java 类名`从main方法开始运行程序。
+
+
+
+如果基类定义的方法没有声明抛出一样，那么子类重写该方法的时候也不能声明抛出任何异常，因为如果基类对象指向子类对象引用时，如果子类抛出异常将无法检测；反之，如果基类方法声明的异常抛出，子类可以不抛出异常或者抛出基类异常对象的子类异常。
+
+
+
+定义数组或List的时候给定初始元素的方式：
+
+```java
+List<Integer> intList = Arrays.asList(1,2,3);
+Integer[]     intAray = new Integer[] {1,2,3};
+```
+
+
+
+
+
+使用类的三个准备步骤：
+
+1. **加载**，这是有类加载执行的，该步骤查找字节码，并从这些字节码中创建一个Class对象
+2. **链接**，在链接阶段将验证类中的字节码，为静态域分配存储空间，如果必须的话，将解析这个类创建的对其他类的所有引用。（**static final变量在分配存储空间时直接给值，static变量仅分配空间，在初始化阶段赋值**）
+3. **初始化**，如果该类有超类，则对其初始化，执行静态初始化器和静态代码块。
+
+
+
+使用`类名.class`获取Class对象不会导致类的初始化，而`Class.forName()`会导致类的初始化。
+
+当且仅当访问一个类的静态常量的时候不会引起初始化，即`static final`，如果只有static没有final的话，类会被初始化。
+
+
+
+
+
+对象类型检测使用`A intanceOf(B)`时，虚拟机在A是B或者A是B的派生类时，都会返回true，A与B没有任何关系或者A是B的父类时，则返回false。 使用A与B的Class对象做比较时，无论使用==还是equals，返回结果一致，都只有A和B是同一个类的时候才返回true。
+
+
+
+
+
+**基本类型不能作为泛型参数**
+
+Java泛型尖括号中的类型描述符号均为用户全新定义的可替换的类型，如果有定义：
+
+```
+class Template<Integer> {
+	//在这个类定义中使用Integer var1与T var1的性质一样，var1并不是整数1
+	//如果要使用整数类型，要使用java.lang.Integer var1
+}
+```
+
+
+
+泛型接口的参数只确定泛型接口中方法的参数与返回值的类型。**使用泛型接口的时候与类名后面要不要尖括号的类型参数没有必然关系**，使用就是：`class A implements<参数类型>`，A后面没有任何东西，除非A是泛型类。**如果是继承泛型，定义类名和父类名后面都要跟类型参数，形如：`class A<T> extends B<T>`，或者都不用类型参数<T>**
+
+
+
+在不是必须使整个类泛型化的才能达到目的的情况下，应该尽可能使用泛型方法。
+
+
+
+当使用泛型类时，必须在创建对象的时候指定类型参数的值；而使用泛型方法通常不必指明参数类型，因为编译器会做类型推断找出恰当的类型，如果必须要指明方法，必须在点操作符和方法名之间插入尖括号指明，形如：`duck.<String>getName()`
+
+
+
+做一个泛型生成器
+
+```java
+//定义生成器接口
+interface Generator<T> { T next();}
+//实现生成器，泛型类并实现泛型接口
+class GeneratorImpl<T> implements Generator<T> {
+    private Class<T> type;//保存类对象，使用类型信息生成对象
+
+    public GeneratorImpl(Class<T> type) {
+        this.type = type;
+    }
+
+    public static <T> Generator<T> create(Class<T> type) {
+        return new GeneratorImpl<T>(type);
+    }
+
+    @Override
+    public T next() {
+        try {
+            return type.newInstance(); //生成对象返回
+        } catch (InstantiationException | IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}
+
+public class Test {
+    public static void main(String[] args) {
+        Generator g = GeneratorImpl.create(String.class);
+        System.out.println(g.next());
+        Generator g1 = new GeneratorImpl(String.class);
+        System.out.println(g1.next());
+
+    }
+}
+```
+
+
+
+
+
+泛型中表示一个大类类型（也可以叫做限定边界）时，有下面三种写法：
+
+- ？：表示任何事物，`Class`与`Class<?>`是等价的
+- `Class<T extends Number>`：限定类型是Number或者Number的子类，在表示多重继承的时候，尖括号中应该先写类，后写接口，然后把他们用&连接起来，如`class A<T extends 类 & 接口 & 接口>`，只能有一个基类，但可以有多个接口。
+- `Class<T super Integer>`：限定类型为Integer的超类
+
+
+
+**调用静态方法时，即使该类的对象是null，也能成功调用，但非静态方法会抛空指针异常**
+
+
+
+对于在泛型中创建数组，`Array.newInstance(类型,数量)`是推荐的方式
+
+
+
+在泛型类中，由于类型擦除的原因，任何在运行时需要知道确切类型信息的操作都将无法工作。比如创建对象，调用泛型对象的方法等。如果需要在泛型类中创建泛型对象，有三种方法：
+
+1. 第一种就是传入类型信息Class<T>，然后调用newInstance()方法，但这样做有个缺陷就是必须要求传入的类型有默认构造函数，否则将抛出异常，比如Integer。
+2. 使用工厂方法，能解决这个缺陷，但代码繁琐一点。
+3. 使用模板方法。
+
+使用类型信息并调用newInstance方法：
+
+```java
+class A<T> {
+    private T ele;
+    public A(Class<T> type) {
+        try {
+            this.ele = type.newInstance();使用newInstance方法
+        } catch (InstantiationException | IllegalAccessException e) {
+            e.printStackTrace();
+        }
+    }
+    public T getEle() { return ele; }
+    public void setEle(T ele) { this.ele = ele; }
+}
+```
+
+
+
+使用工厂方法，并自定义对象产生方式：
+
+```java
+//定义工厂方法泛型接口
+interface Factory<T> {
+    T create();
+}
+
+//定义泛型类，类中不需要类型信息
+class A<T> {
+    private T ele;
+    //构造函数中传入工厂接口的实现，调用接口方法生产实例对象
+    public <F extends Factory<T>> A(F factory) {
+        this.ele = factory.create();
+    }
+    public T getEle() { return ele; }
+    public void setEle(T ele) { this.ele = ele; }
+}
+
+public class MyList {
+    public static void main(String[] args) {
+        //使用整数的泛型
+        A<Integer> a = new A<Integer>(() -> 100);
+        System.out.println(a.getEle());
+		//使用字符串的泛型
+        A<String> s = new A<String>(()-> "hello world");
+        System.out.println(s.getEle());
+    }
+}
+```
+
+
+
+使用模板方法：
+
+```java
+abstract class A<T> {
+    private T ele;
+    public A() {
+        ele = create();
+    }
+    public T getEle() { return ele; }
+    abstract T create(); //留给子类做具体定义
+    public void setEle(T ele) { this.ele = ele; }
+}
+
+class B extends A<String> {
+    @Override
+    String create() {
+        return new String("hello world");
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        A a = new B();//父类引用子类对象
+        System.out.println(a.getEle());
+    }
+}
+```
+
+
 
 
 

@@ -1499,25 +1499,386 @@ TreeSet内部使用的TreeMap，仅仅使用了TreeMap的key，value则使用的
 
 ### HashMap
 
+hashMap和hashTable类似，主要的区别在于hashTable是线程安全的，但不支持key和value为null，而hashMap非线程安全，但支持null。
+
+hashMap默认的hash桶容量为16，装载因子为0.75，如果hashMap中实际的容量超过`容量*装载因子`的值之后，容器会将容量扩大为原容量的2倍，然后重建内部结构。另外定义链表的默认长度为8，当链表的长度超过这个值 的时候，hashMap会将该链表转为二叉树。
+
+在使用hashMap的时候，如果确定有大量的数据要插入到容器中，最好在建立容器的时候指定一个合适的容量值。因为频繁的容量扩展引起的结构重建会带来性能的严重下降。
+
+
+
+下面看看hashMap中常量的定义：
+
+```java
+//由于hashMap哈希值和下标的计算使用二进制，所以要求数组的长度必须是2次幂才能正确运算
+static final int DEFAULT_INITIAL_CAPACITY = 1 << 4; //16，默认数组长度
+static final int MAXIMUM_CAPACITY = 1 << 30; //数组的最大长度，
+
+static final float DEFAULT_LOAD_FACTOR = 0.75f; //装载因子
+
+static final int TREEIFY_THRESHOLD = 8; //当链表的长度超过8时,也一定是2次幂，树化
+static final int UNTREEIFY_THRESHOLD = 6; //在删除元素的过程中，如果树中的元素小于6时，链表化
+static final int MIN_TREEIFY_CAPACITY = 64; //只有当数组长度大于64时，才考虑树化操作
+```
+
+为什么容量一定要是2^n次方？
+
+由于hashMap哈希值和下标的计算使用二进制，所以要求数组的长度必须是2次幂才能正确运算
+
+
+
+在数组长度大于64的前提下，如果链表长度>=8的时候，链表会被转为红黑树；当resize的时候，如果节点数小于6的二叉树会被还原成链表。
+
+**只有当hash桶的容量大于64的时候，才有可能树化链表**
+
+
+
+hashMap中的容量总是2^N次方，所以当用户填入一个值的是有，容器会找到离这个值最近的2次幂值做为hashMap的容量。下面是转换函数：
+
+```java
+static final int tableSizeFor(int cap) {
+    int n = cap - 1;
+    n |= n >>> 1;
+    n |= n >>> 2;
+    n |= n >>> 4;
+    n |= n >>> 8;
+    n |= n >>> 16;
+    // MAXIMUM_CAPACITY = 1 << 30; 2^30
+    return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
+}
+```
+
+
+
+hashMap计算索引的方式如下：
+
+```
+index = (table.length - 1) & hash;
+```
+
+由于table.length是2次幂，所以table.lenght-1就是二进制除了最高位为0，其余位数全部为1，用这个值与哈希值计算就相当于是`hash%table.lenght`算得映射的位置。
+
+
+
+哈希的计算方式
+
+```java
+//Node节点的哈希计算方式
+public final int hashCode() { //从新定义了hashCode的产生方式
+    return Objects.hashCode(key) ^ Objects.hashCode(value);
+}
+//计算hash的时候再对节点的hashCode做一次处理
+static final int hash(Object key) {
+    int h; //
+    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+}
+```
+
 
 
 #### 插入
+
+当用户调用put(key, value)后，hashMap会转为调用putVal()将数据插入map
+
+插入流程大致如下：
+
+>步骤1：检查哈希数组是否为空，如果为空转到步骤2，否则转到步骤3
+>
+>步骤2：对hashMap做resize操作，resize可能是初始化，可能是容量扩展。然后执行步骤3
+>
+>步骤3：检查该哈希值是否第一次出现，如果是第一次出现，直接新建一个节点插入map中，否则执行步骤4
+>
+>步骤4：出现了哈希冲撞，读数据做检查，如果遇到了相同的数据，记录该数据为e，转到步骤7；如果该哈希下是一颗树，转到步骤5；如果该哈希下是一个链表。转到步骤6
+>
+>步骤5：调用putTreeVal将数据插入树中，并记录新插入的元素为e。转到步骤7
+>
+>步骤6：遍历该链表，如果遇到相同元素，标记为e并退出循环；遍历到链表尾部，然后插入新的节点，最后检查链表长度是否超过树化阈值，如果超过，那么执行treeifyBin树化。转到步骤7
+>
+>步骤7：如果插入的数据的key已经存在，且不为null，设置onlyIfAbsent的情况下，用新的value更新旧的value，然后返回旧的value。转到步骤8
+>
+>步骤8：更新元素个数，插入之后是需要resize，如果需要则resize，最后返回
+
+```java
+public V put(K key, V value) {
+    return putVal(hash(key), key, value, false, true);
+}
+```
+
+具体实现代码：
+
+```java
+final V putVal(int hash, K key, V value, boolean onlyIfAbsent, boolean evict) {
+    Node<K, V>[] tab;
+    Node<K, V> p;
+    int n, i;
+    //如果是首次插入元素,通过resize来申请table的空间
+    if ((tab = table) == null || (n = tab.length) == 0)
+        n = (tab = resize()).length;//记录table长度到n用来计算索引值
+
+    //如果是首次使用这个哈希值对应的桶
+    if ((p = tab[i = (n - 1) & hash]) == null)
+        tab[i] = newNode(hash, key, value, null);//创建一个新元素
+    else {//出现了哈希冲撞
+        Node<K, V> e;
+        K k;
+        if (p.hash == hash &&
+                ((k = p.key) == key || (key != null && key.equals(k))))
+            e = p;//找到了相同的key，记录下来该entry，不做插入操作
+        else if (p instanceof TreeNode) //如果是树，插入到树中
+            e = ((TreeNode<K, V>) p).putTreeVal(this, tab, hash, key, value);
+        else {//如果是链表，遍历链表
+            for (int binCount = 0; ; ++binCount) {
+                if ((e = p.next) == null) {
+                    //遍历链表到末尾,并插入新的数据
+                    p.next = newNode(hash, key, value, null);
+                    //检查插入数据后的链表长度是不是超过了树化的阈值，
+                    if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
+                        treeifyBin(tab, hash);//超过了阈值，则将链表数据转为二叉树
+                    break;
+                }
+
+                //如果在遍历过程中查找到相同的key，直接退出循环
+                if (e.hash == hash &&
+                        ((k = e.key) == key || (key != null && key.equals(k))))
+                    break;
+                p = e;
+            }
+        }
+
+        //如果插入的数据的key已经存在，且不为null
+        if (e != null) { // existing mapping for key
+            V oldValue = e.value;
+            if (!onlyIfAbsent || oldValue == null)
+                e.value = value;//设置onlyIfAbsent的情况下，用新的value更新旧的value
+            afterNodeAccess(e);//调用访问节点的回调函数，本类中为空，可通过继承hashMap定义
+            return oldValue;//返回旧的value
+        }
+    }
+
+    ++modCount;//更新修改次数
+    //如果新增一个元素之后实际容量大于capacity的阈值，做一次resize
+    if (++size > threshold)
+        resize();
+    afterNodeInsertion(evict);//调用插入之后的回调函数
+    return null;
+}
+```
 
 
 
 #### 删除
 
+hashMap中删除数据的流程如下(**先搜索，再删除**)：
+
+>首先table不为null，并且在哈希映射的位置存在值的时候，才进行删除操作。大致流程是先找到要删除的对象引用，然后再执行删除操作。定义node保存要删除的目标变量，默认为null
+>
+>步骤1：检查哈希值映射到的对象，如果该对象就是需要被删除的对象，记录在node变量，执行步骤4；否则检查该哈希下是否有多个对象，如果多个对象被组织为二叉树，转到步骤2；组织为链表，转到步骤3
+>
+>步骤2：在二叉树中搜索目标节点，将搜索到的节点保存到node变量，转到步骤4
+>
+>步骤3：在链表中查找目标元素，找到则保存到node，转到步骤4
+>
+>步骤4：node不为null的情况下，如果node就是需要被删除的对象，直接`tab[hash(obj)]=null`，如果node在二叉树中，则调用二叉树的方法删除；如果node在链表中，则从链表中删除。转到步骤5
+>
+>步骤5：执行`--size`，更新数量；执行回调函数afterNodeRemoval(node)
+
+```java
+final Node<K, V> removeNode(int hash, Object key, Object value, boolean matchValue, boolean movable) {
+    Node<K, V>[] tab;
+    Node<K, V> p;
+    int n, index;
+    //存在table，并且在哈希映射位置存在值的时候，才进行删除操作
+    if ((tab = table) != null && (n = tab.length) > 0 && (p = tab[index = (n - 1) & hash]) != null) {
+        Node<K, V> node = null, e;
+        K k;
+        V v;
+        // 需要被删除的元素是p或者以p为头的链表或树
+        if (p.hash == hash && ((k = p.key) == key || (key != null && key.equals(k))))
+            node = p;//要删除的就是p, 记录在node变量
+        else if ((e = p.next) != null) { //如果该哈希映射位置不止一个元素
+            //二叉树
+            if (p instanceof TreeNode) //在二叉树中找到目标节点
+                node = ((TreeNode<K, V>) p).getTreeNode(hash, key);
+            else { //链表
+                do { //在链表中找到目标节点
+                    if (e.hash == hash && ((k = e.key) == key || (key != null && key.equals(k)))) {
+                        node = e;
+                        break;
+                    }
+                    p = e;
+                } while ((e = e.next) != null);
+            }
+        }
+
+        if (node != null && (!matchValue || (v = node.value) == value ||
+                (value != null && value.equals(v)))) {
+
+            if (node instanceof TreeNode) //从树中删除节点
+                ((TreeNode<K, V>) node).removeTreeNode(this, tab, movable);
+            else if (node == p) //链表的第一就是要删除，直接设置指向为被删除节点的next
+                tab[index] = node.next;
+            else //被删除节点在链表中间
+                p.next = node.next;
+            ++modCount;
+            --size;
+            afterNodeRemoval(node); //调用回调函数
+            return node;
+        }
+    }
+    return null;
+}
+```
 
 
-#### 修改
+
+#### resize
+
+resize是hashMap中较为复杂的一个函数，整体上来讲，该函数分为两个阶段：
+
+- 第一阶段：在resize前，根据当前map的信息，重新设定capacity和threshold值
+- 第二阶段：以新的capacity创建新的table，将旧table中的数据转储到新的table中
+
+第一阶段流程：
+
+>判断当前table的容量，变量oldCap
+>
+>- 如果oldCap>0（扩展map）：oldCap大于MAXIMUM_CAPACITY时已经无法再扩大两倍，将threshold设置为最大整数值，以便可以继续往map中存放数据；  如果oldCap的2倍没有超过MAXIMUM_CAPACITY，且oldCap大于默认初始化capacity，扩展capacity为oldCap的两倍。
+>- 如果oldCap==0并且oldThr>0：table是null的时候并且oldThr>0，使用oldThr作为capacity
+>- 如果oldCap==0并且oldThr=0：纯粹的初始化，使用默认值
 
 
 
-#### 查看
+第二阶段流程：
+
+> 步骤1：创建新容量的数组
+>
+> 步骤2：遍历旧的数组，依次转储每个哈希值下面的元素到新的数组上，转储过程中，如果哈希值映射的位置是单个元素，重新映射该元素并存放到新数组中；如果映射到的是二叉树，转到步骤3；链表则转到步骤4
+>
+> 步骤3：执行split函数重新建立结构。先将元素按`e.hash & oldCap`分为链表存储的loHead和hiHead两组。然后将loHead链表放到table[index]中；其中loHead链表放到table[index + oldCap]中。最后如果分组元素数量<=UNTREEIFY_THRESHOLD则使用链表存储，否则将转为二叉树存储。
+>
+> 步骤4：遍历该链表，并根据`e.hash & oldCap`是否为零，将原来的一个链表划分为loHead和hiHead开头两个链表，其中loHead链表放到table[index]中；其中loHead链表放到table[index + oldCap]中。随后将解释为什么需要这样分组和放置。
+
+
+
+为什么根据`v = e.hash & oldCap`的值来分组以及为什么v==0的元素，在新数组仍然放在原来的index位置，而v!=1的元素要放在新数组中index+oldCap的位置？
+
+**本质原因在于二进制的计算特性**
+
+考虑这样一种情况，假定有个key为整数的map，初始的table长度是4，并假定key就是e.hash，也就是我们之间在图上看到的值。e表示其节点对象，index表示计算出的数组下标。
+
+当前的内部结构如图：
+
+![](assets/hashmap1.png)
+
+从上图可以看到，按`e.hash & oldCap`是否等于0，可以将节点分为两类，0和8属于loHead，4和12属于hiHead。现在将对该hash扩容为2倍到8，并将loHead的放在table[index]，hiHead的放在table[index+oldCap]的位置。**通过此方式可以不用重新计算每个节点新的索引值就能将其放到正确的位置上**
+
+![](assets/hashmap2.png)
+
+
+
+下面是resize的代码：
+
+```java
+final Node<K, V>[] resize() {//初始化或者双倍容量
+    Node<K, V>[] oldTab = table;
+    int oldCap = (oldTab == null) ? 0 : oldTab.length;
+    int oldThr = threshold;
+    int newCap, newThr = 0;
+
+    /*设置新的capacity和threshold*/
+    if (oldCap > 0) {//oldCap大于0，表示扩展旧的table
+        if (oldCap >= MAXIMUM_CAPACITY) {//如果旧的capacity已经达到最大值，不能继续扩大两倍了
+            //threshold标志需要resize的临界值，设置继续存放，直到实际数据达到整数最大值
+            threshold = Integer.MAX_VALUE;
+            return oldTab;//不做扩张，直接返回
+        } else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY && oldCap >= DEFAULT_INITIAL_CAPACITY)
+            //如果旧的capacity的2倍没有超过MAXIMUM_CAPACITY，且旧的capacity大于默认初始化capacity
+            newThr = oldThr << 1; // 将threshold设置为2倍
+    } else if (oldThr > 0) // initial capacity was placed in threshold
+        newCap = oldThr;//如果capacity为0，且threshold大于0，更新capacity为旧的threshold
+    else {               // zero initial threshold signifies using defaults
+        //纯粹的初始化，capacity和threshold都使用默认值
+        newCap = DEFAULT_INITIAL_CAPACITY;
+        newThr = (int) (DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
+    }
+
+    //如果阈值为0，更新阈值
+    if (newThr == 0) {
+        float ft = (float) newCap * loadFactor;//capacity乘以装载因子
+        //如果capacity没有超过最大值，且阈值ft也没有超过最大值就使用，否则使用整数最大值
+        newThr = (newCap < MAXIMUM_CAPACITY && ft < (float) MAXIMUM_CAPACITY ?
+                (int) ft : Integer.MAX_VALUE);
+    }
+
+
+    threshold = newThr;//更新到当前对象
+    /*定义新的数组并转储数据*/
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    Node<K, V>[] newTab = (Node<K, V>[]) new Node[newCap]; //定义新的数组
+    table = newTab;//更新引用
+
+    //如果旧的table有数据就转移过来
+    if (oldTab != null) {
+        //按数组下标顺序变量哈希表
+        for (int j = 0; j < oldCap; ++j) {
+            Node<K, V> e;
+            //如果该哈希桶有元素
+            if ((e = oldTab[j]) != null) {//用变量e指向该哈希下的链表头或者树根
+                oldTab[j] = null;//然后立马把该哈希的执行设置为null
+
+                if (e.next == null)//如果该哈希下只有一个元素
+                    newTab[e.hash & (newCap - 1)] = e; //将这个元素放入新的哈希表中
+                else if (e instanceof TreeNode)//如果该哈希下是一颗二叉树
+                    /*转移树中的元素*/
+                    ((TreeNode<K, V>) e).split(this, newTab, j, oldCap);
+                else { // preserve order
+                    //转移链表中的元素
+                    Node<K, V> loHead = null, loTail = null;
+                    Node<K, V> hiHead = null, hiTail = null;
+                    Node<K, V> next;
+                    //遍历链表,并将原来的链表分成两个子链表
+                    do {
+                        next = e.next;
+                        if ((e.hash & oldCap) == 0) {
+                            //这个链表的数据存放在低位索引
+                            if (loTail == null)
+                                loHead = e;
+                            else
+                                loTail.next = e;
+                            loTail = e;
+                        } else {
+                            //这个链表的数据存放在高位索引
+                            if (hiTail == null)
+                                hiHead = e;
+                            else
+                                hiTail.next = e;
+                            hiTail = e;
+                        }
+                    } while ((e = next) != null);
+
+                    //将旧链表的数据分散到新的链表并保证了在新table中哈希能够正确映射
+                    if (loTail != null) {
+                        loTail.next = null;//设置链表尾部
+                        newTab[j] = loHead;//将loHead的链表头放到newTab的j位中
+                    }
+
+                    if (hiTail != null) {
+                        hiTail.next = null;//设置链表尾部
+                        newTab[j + oldCap] = hiHead;//将loHead的链表头放到newTab的j+oldCap位中
+                    }
+                }
+            }
+        }
+    }
+    return newTab;
+}
+```
 
 
 
 #### 迭代器
+
+hashMap中提供了keySet、values、entrySet等方法，这类方法返回一个迭代器，在该迭代器上的操作都会直接在hashMap原始的数据结构上生效。比如从keySet中删除一个值，那么将导致这个键从hashMap中删除。
 
 
 
@@ -1525,23 +1886,19 @@ TreeSet内部使用的TreeMap，仅仅使用了TreeMap的key，value则使用的
 
 TreeMap背后的数据结构为红黑树，选择红黑树的原因在于红黑树相对二叉树或者AVL树有更好的平衡性质。二叉树在输入有序数据的情况下， 会退化成为一个链表，时间复杂度退化为O(N)，完全失去了二叉搜索树的优良特性，并且其形状根据输入的数据不同产生不同的形状；AVL树保证了二叉树的绝对平衡，也就是左右子树的高度最多相差一，绝对平衡保证了数据访问的高效性，但是为了为了维护绝对平衡的状态，在从树中插入和删除元素时，需要较高的时间成本。红黑树恰好在时间成本和绝对平衡之间做了一个平衡，红黑树正如其名，树中的每个节点被标记为红、黑两种颜色，且具有以下特点：
 
-1. 节点是红色或者黑色
-2. 根节点是黑色
-3. 所有叶节点是黑色
-4. 每个红色节点的两个子节点都是黑色（每个叶子节点到根节点的所有路径上不能有两个连续的红色节点）
-5. 从任一节点到其每个叶子节点的所有简单路径都包含相同数目的黑色节点
+>a. 节点是红色或者黑色
+>
+>b. 根节点是黑色
+>
+>c. 所有叶节点是黑色
+>
+>d. 每个红色节点的两个子节点都是黑色（每个叶子节点到根节点的所有路径上不能有两个连续的红色节点）
+>
+>e. 从任一节点到其每个叶子节点的所有简单路径都包含相同数目的黑色节点
 
 这些特性或者说是条件使得红黑树最坏情况下，从跟节点到叶节点的最长路径不大于最短路径的两倍，这样的数就是大致平衡的了。
 
 TreeMap中的属性如下：
-
-Comparator<? super K> comparator;
-
-Entry<K,V> root;
-
-int size = 0; The number of entries in the tree
-
-private transient int modCount = 0; The number of structural modifications to the tree.
 
 ```java
 static final class Entry<K,V> implements Map.Entry<K,V> {
@@ -1556,83 +1913,23 @@ static final class Entry<K,V> implements Map.Entry<K,V> {
 
 
 
-
-
-先看TreeMap中私有函数实现，这些私有函数是公共接口的支撑。
-
-```java
-final Entry<K,V> getEntry(Object key) {
-    // Offload comparator-based version for sake of performance
-    if (comparator != null)
-        return getEntryUsingComparator(key);
-    if (key == null)
-        throw new NullPointerException();
-    @SuppressWarnings("unchecked")
-    Comparable<? super K> k = (Comparable<? super K>) key;
-    Entry<K,V> p = root;
-    while (p != null) {
-        int cmp = k.compareTo(p.key);
-        if (cmp < 0)
-            p = p.left;
-        else if (cmp > 0)
-            p = p.right;
-        else
-            return p;
-    }
-    return null;
-}
-```
-
-
-
-下面是TreeMap中提供的接口列表，我们根据接口列表去分析每个列表在java源码中的内部实现。
-
-
-
-void	clear()
-          Removes all mappings from this TreeMap.
- Object	clone()
-          Returns a shallow copy of this TreeMap.
- Comparator	comparator()
-          Returns the comparator used to order this TreeMap, or null if this TreeMap uses its keys' natural order.
- boolean	containsKey(Object key)
-          Returns true if this TreeMap contains a mapping for the specified key.
- boolean	containsValue(Object value)
-          Returns true if this Map maps one or more keys to the specified value.
- Set	entrySet()
-          Returns a Set view of the mappings contained in this Map.
- Object	firstKey()
-          Returns the first (lowest) key currently in this SortedMap.
- Object	get(Object key)
-          Returns the value to which this TreeMap maps the specified key.
- SortedMap	headMap(Object toKey)
-          Returns a view of the portion of this TreeMap whose keys are strictly less than toKey.
- Set	keySet()
-          Returns a Set view of the keys contained in this TreeMap.
- Object	lastKey()
-          Returns the last (highest) key currently in this SortedMap.
- Object	put(Object key, Object value)
-          Associates the specified value with the specified key in this TreeMap.
- void	putAll(Map map)
-          Copies all of the mappings from the specified Map to this TreeMap These mappings will replace any mappings that this TreeMap had for any of the keys currently in the specified Map.
- Object	remove(Object key)
-          Removes the mapping for this key from this TreeMap if present.
- int	size()
-          Returns the number of key-value mappings in this TreeMap.
- SortedMap	subMap(Object fromKey, Object toKey)
-          Returns a view of the portion of this TreeMap whose keys range from fromKey, inclusive, to toKey, exclusive.
- SortedMap	tailMap(Object fromKey)
-          Returns a view of the portion of this TreeMap whose keys are strictly less than toKey.
- Collection	values()
-          Returns a Collection view of the values contained in this TreeMap.
-
-
-
 ## Queue
 
 
 
+
+
+
+
 ## Stack
+
+java的Stack继承制Vector，所有的方法均有synchronize修饰，所以**stack对象是线程安全的**，对stack进行操作的时候，实际上转为vector上的操作：
+
+- **push(obj)**: 执行vector的`elementData[elementCount++] = obj;`在vector数组末尾新增一个元素。
+- **pop()**: 执行vector的`removeElementAt(len - 1);`方法，删除最有一个元素，并返回其引用。
+- **peak**: 执行vector的`elementAt(len - 1)`方法，返回栈顶元素。
+
+
 
 
 

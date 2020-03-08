@@ -1,3 +1,48 @@
+# 多线程基础及相关概念
+
+## 线程的概念
+
+线程可以理解为轻量级的进程，一个进程可以持有多个线程。进程是资源持有的单位，进程中的多个线程共享线程的资源。线程是CPU的调度单位。
+
+Java中的线程具有以下特点：
+
+- 线程属于一次性用品，一旦运行完毕，不可以再次调用start()函数。
+- Java虚拟机会为每个线程分配调用栈（Call Stack）所需的内存空间。
+
+
+
+## 线程的状态
+
+**NEW**: 线程刚创建完成，在调用start方法前的状态。线程的生命周期中只会出现一次这个状态。
+
+**RUNNABLE**：线程调用了start方法，准备就绪，等待CPU调度。
+
+**BLOCKED**：线程被阻塞，可能是等待IO操作或者是请求锁。
+
+**WAITING**：现在执行了某些方法，比如wait,join等，让线程陷入等待状态，等待通知。
+
+**TIMED_WAITING**：与WAITING一样，WAITING可能是无限制等待，TIMED_WAITING等待超过时间上限会返回。
+
+**TERMINATED**：线程任务执行完毕。run方法执行完毕或者抛出异常线程都将进入这个状态。线程的生命周期中只会出现一次这个状态。
+
+
+
+### 状态转换图
+
+![](assets/thread-state.png)
+
+## Runnable还是Thread子类
+
+使用Thread的子类创建线程是一种基于继承的技术，通过这种方式，创建一个线程就需要虚拟机为其分配调用栈空间、内核线程等资源，成本比较高。但由于其独立性比较高，线程之间的运行不会出现错误结果。
+
+使用Runnable创建线程是一种组合技术，组合相对继承来讲有更低的耦合性，因此也就更加灵活，一般认为组合是优先选项。但使用Runnable时可能出现正确性问题，因为所有线程示例都使用了同一个Runnable实例，当Runnable的定义中存在共享变量时，多个线程的操作可能会导致数据产生不一致。
+
+
+
+
+
+
+
 # Java线程的同步机制
 
 ## 可见性
@@ -966,13 +1011,92 @@ class ConditionUsage {
 
 
 
-### await/signal示例
+## await/signal示例
+### 单生产者-多消费者（无过早唤醒问题）
+```java
+public class Client {
+    static Lock lock = new ReentrantLock(); //同步锁
+    //使用两个不同的条件变量分别用于等待和通知生产者与消费者，避免过早唤醒问题
+    static Condition consume = lock.newCondition(); //条件变量，等待和通知消费者
+    static Condition produce = lock.newCondition(); //条件变量，等待和通知生产者
+    static volatile String product = null;
+	//消费者逻辑
+    static Runnable consumer = () -> {
+        //不断消费产品
+        while (true) {
+            lock.lock(); //获取锁
+            try {
+                //如果没有产品可以消费，等待在条件变量consume上
+                while (product == null) {
+                    consume.await();
+                }
+                System.out.println(" -> " + Thread.currentThread().getName() + " consumes " + product);
+                product = null;   //消费掉产品
+                produce.signal(); //告诉producer产品已经被消费
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                lock.unlock(); //释放锁
+            }
+        }
+    };
+	
+    //生产者逻辑
+    static Runnable producer = () -> {
+        //生产10000个产品给三个消费者去消费
+        for (int i = 1; i <= 10000; i++) {
+            lock.lock(); //获取锁
+            try {
+                //如果产品没有没消费，那么在条件变量produce上等待
+                while (product != null) {
+                    produce.await();
+                }
+                //产品被消费掉，生产新的产品
+                product = "product" + i;
+                System.out.print("new " + product);
+                //通知所有等待在条件变量consume上的消费者
+                consume.signalAll();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                lock.unlock(); //释放锁
+            }
+        }
+    };
 
+    public static void main(String argv[]) {
+        //创建3个消费者
+        for (int i = 1; i <= 3; i++)
+            new Thread(consumer, "consumer" + i).start();
+		//创建一个生产者
+        new Thread(producer, "producer").start();
+    }
+}
+
+```
 
 
 
 
 ## CountdownLatch
+
+`CountdownLatch`可以用来实现一个（或者多个）线程等待其他线程完成一组特定的操作之后才继续运行。比如一个线程等待其他线程完成N个步骤，或者一个线程等待其他N个线程运行完毕。
+
+
+
+当然我们也可以通过条件变量达成上述目的，但实现起来比较复杂，而CountdownLatch已经为我们封装好了整个流程，并且用户不需要使用加锁也能实现线程安全的操作。
+
+
+
+在创建一个CountdownLatch对象时，我们需要制定一个计数器初值，CountdownLatch对象会维护整个计数器变量，每当对象的countdown方法被调用一次，计数器的值减少一。当且仅当计数器的值减到0时，CountdownLatch对象的await方法会返回，否则会一直等待计数器减为0。另外，为了避免因为代码错误，导致逻辑上没有时计数器能减到0的条件，CountdownLatch也提供了
+
+`public boolean await(long timeout, Timeunit unit) throws interruptedException`
+
+方法，当等待时间超过指定时长时，函数也会返回。
+
+
+
+**CountdownLatch的使用时一次性的，一个实例只能实现一次等待和唤醒。CountdownLatch的内部计数器值减为0之后就保持不变，后续执行countDown方法并不会有任何异常抛出，执行await方法的线程也不会被暂停**
 
 
 
@@ -982,11 +1106,254 @@ class ConditionUsage {
 
 ## CyclicBarrier（栅栏）
 
+如果在代码中有这样一种需求：多个线程或者任务约定一个集合点，先到达该集合点的线程或者任务必须等待没有到达的线程或其他任务，只有当所有线程或任务都到达集合点之后，大家才能继续向后运行处理后续任务。那么使用CyclicBarrier能很好的解决这个问题，Cyclic也就表示该类的对象实例是可以反复使用的。
+
+
+
+使用CyclicBarrier实现等待的线程被称为参与方（Party），参与方调用CyclicBarrier.await方法就可以实现等待。CyclicBarrier对象内部维护了一个显示锁，并且CyclicBarrier对象总是能够区分执行await方法的最后一个线程。
+
+> 实际上，CyclicBarrier内部使用了一个条件变量trip来实现等待与通知，同时维持了一个parties计数器。每当一个线程执行CyclicBarrier.await方法都会使得该计数器的值减一，当最后一个线程执行await方法时，parties的值变为0。这时，CyclicBarrier会先执行一个用户自定义的方法barrierAction.run，然后再执行trip.signalAll方法唤醒前面所有的线程；紧接着，恢复parties计数器的值，开始下一个工作周期。
+
+
+
+**假定一同N个线程，前面先到集合点的N-1个线程执行await方法都会导致线程等待，当第N个线程执行await方法时，该线程并不会被暂停，二是起了通知的作用，唤醒所有等待线程可以开始新一轮工作**
+
+
+
+### CyclicBarrier的使用例子
+
+假定有一天4个学生组队出去玩铁人三项，但是由于每个人的速度不同，约定没完成一个项目之后，先到的人等待后面的人，知道所有的人都到齐之后才能继续开始下一个项目，知道所有项目完成。以下是模拟代码。
+
+```java
+public class Main {
+    static int N = 4;
+    static List<String> activities = new ArrayList<>();
+    static CyclicBarrier allDone = new CyclicBarrier(N, () -> {
+        System.out.println("all come together");
+    });
+
+
+    public static void main(String[] args) {
+        //设置三项运动
+        activities.add("running");
+        activities.add("swimming");
+        activities.add("biking");
+
+        //N个人陆续出发
+        for (int i = 0; i < N; i++) {
+            new Thread(() -> {
+                //按顺序完成各项运动
+                for (String activitie : activities) {
+                    try {
+                        //每个人使用时间不同
+                        Thread.sleep((long) (Math.random() * 5000));
+                        System.out.println(Thread.currentThread().getName() + " finish " + activitie);
+                        //先完成的必须等待其他人，等所有人都到齐后才能开始下一项运动
+                        allDone.await();
+                    } catch (InterruptedException | BrokenBarrierException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }, "student" + i).start();
+        }
+    }
+}
+```
+
+
+
+
+
+## 生产者消费者模式
+
+在Java中，使用java提供的阻塞队列可以非常轻易的实现生产者消费者模式。
+
+**通过阻塞队列，当队列中有元素可以消费时，消费者可以顺利的从中取出元素，如果队列暂时为空，那么消费在取元素的时候将会被阻塞；对生产者而言也一样，如果队列还能容纳更多的元素，那么生产者可以顺利向队列中放入元素，如果队列没有空间容纳时，将阻塞生产者的放入操作。**
+
+
+
+**阻塞队列也提供非阻塞的操作方法offer和poll，offer向队列中存入元素时如果队列已满，返回false，成功则返回true；poll从队列中取出元素时如果队列为空则返回null，否则返回取出的元素**
+
+
+
+### 阻塞队列分类
+
+按空间大小划分有：
+
+- **有界队列(Bounded Queue)**。有界队列的容量在使用前有用户指定容量大小
+- **无界队列(Unbounded Queue)**。无界队列的容量大小为`Integer.MAX_VALUE`
+
+
+
+按数据结构划分有：
+
+- **ArrayBlockingQueue**。**ArrayBlockingQueue**内部使用数组来存储数据，数组的空间是预先分配的，所以在工作期间不存在存储空间的申请与释放，没有垃圾回收的负担。但由于消费者的`take`和生产者`put`的操作都是使用同一个锁，在高并发情况下由于频繁的锁申请与释放会导致较多的上下文切换
+
+- **LinkedBlockingQueue**。**LinkedBlockingQueue**内部使用链表来存储数组，存储数据没有容量的上限，并且消费者的`take`和生产者`put`的操作同步在不同的锁上（putLock和takeLock），所以相对数组实现的队列，有更少的上下文切换；但由于每次加入和取出数据都有链表节点对象的申请与释放，需要消耗时间，同时也会增加垃圾回收的负担。另外**LinkedBlockingQueue**使用了一个**AtomicInteger**来维持队列的`size`，而生产与消费过程对这个变量的更新也会产生额外开销。
+
+- **SynchronousQueue**。**SynchronousQueue**没有存储元素的空间，但实际上可以看成是只有一个存储的特殊队列。生产者执行`synchronousQueue.put(E)`时如果没有消费线程执行`synchronousQueue.take`消费，那么生产者线程将会被阻塞，知道消费者线程消费；类似的，如果消费者线程执行执行`synchronousQueue.take`时，生产者没有生产数据，消费者会被暂停直到生产者生产了数据。
+
+
+
+### 队列的选用原则
+
+1. 如果线程的并发度较高，优先选择**LinkedBlockingQueue**
+2. 如果线程的并发度一般，一般选择**ArrayBlockingQueue**
+3. 如果生产者与消费者的生产能力与消费能力相当，选择**SynchronousQueue**
+
+
 
 
 
 
 ## semaphore（信号量）
+
+信号量的定义参考操作系统教程。下面给出了一个java信号量的简单用法。
+
+- 创建信号量对象时，需要指定一个数值给构造函数Semaphore(N)，设置这个信号量有多少个初始资源可分配。另外还有第二个版本的构造函数Semaphore(int N, boolean fair), fair参数设置信号量使用公平锁还是非公平锁，默认采用非公平锁。
+- 信号量的获取资源acquire()方法与释放资源release()方法在同一个线程中或者不同的线程中，总是要配对使用。否则会造成死锁或者某些线程永无希望的等待。acquire方法会使信号量中的资源数减一，到0后调用的线程会被阻塞；release方法会使信号量中的资源加一。
+- 当设置信号量的资源为1时，信号量相当于是一个互斥锁。
+
+
+
+下面这个例子实现了一个缓冲区大小为10，“单生产者-多消费者”的模式。
+
+```java
+public class Main {
+    static int N = 10;
+    static Semaphore produce = new Semaphore(N);
+    static Semaphore consume = new Semaphore(0);
+    static final Queue<String> container = new ArrayDeque<>();
+
+    public static void main(String[] args) {
+        new Thread(() -> {
+            for (int i = 1; i <= 10; i++) {
+                try {
+                    produce.acquire();//检查是容器有可用空间
+                    synchronized (container) {//互斥操作，放入产品到容器
+                        System.out.println(Thread.currentThread().getName() + "  pruduce: product" + i);
+                        container.offer("product" + i);
+                    }
+                    consume.release();//通知消费线程，生产了新的产品
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }, "producer").start();
+
+        Runnable runnable = () -> {
+            while (true) {
+                try {
+                    consume.acquire();//检查是否有产品可以消费
+                    synchronized (container) {//互斥操作，从容器中取出产品
+                        System.out.println(Thread.currentThread().getName() + " consumes " + container.poll());
+                    }
+                    produce.release();//通知消费者可以生产
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+
+        new Thread(runnable, "consumer1").start();
+        new Thread(runnable, "consumer2").start();
+        new Thread(runnable, "consumer3").start();
+    }
+}
+```
+
+
+
+## 线程之间的管道通信
+
+在两个线程之间，相互的输入输出通过管道相对使用共享变量，可以更简单便捷的实现效果。Java提供的`PipedOutputStream`与`PipedInputStream`可以用来建立管道连接。
+
+
+
+**`PipedInputStream`**有以下形式的构造函数，默认缓冲区大小(DEFAULT_PIPE_SIZE)=1024
+
+
+1. `PipedInputStream()`：创建一个 `PipedInputStream` ，暂时不需要连接。
+2. `PipedInputStream(int pipeSize)`：创建一个 `PipedInputStream` ，暂时不需要连接，并且指定管道缓冲区大小为pipeSize
+3. `PipedInputStream(PipedOutputStream src)`：创建一个 `PipedInputStream` ，连接到src的输出作为输入源。
+4. `PipedInputStream(PipedOutputStream src, int pipeSize)`：创建一个 `PipedInputStream` ，连接到src的输出作为输入源，并指定缓冲区大小为pipeSize
+
+
+
+**`PipedOutputStream`**的构造函数与`PipedOutputStream`一样，区别在于连接输出源接受一个可以接收输入数据的`PipedInputStream`对象。
+
+
+
+### 一个线程的输出作为另外一个线程的输出
+设定两个线程，一个线程专门作为输入线程接收用户的输入；一个线程专门作为工作线程将，处理任务（字符串转为大写）。输入线程从标准输入接收数据之后，通过管道把数据输入到工作线程，工作线程，工作线程处理完毕之后将结果输出到标准输出。
+
+```java
+public class Main {
+    public static void main(String[] args) throws IOException {
+        //定义管道输入流
+        PipedOutputStream pout = new PipedOutputStream();
+        //定义管道输出流
+        PipedInputStream pin = new PipedInputStream(pout);//将pout的输出与pin的输入连接到一起
+        PrintWriter writer = new PrintWriter(pout);
+    
+        new Thread(() ->{//工作线程
+            Scanner scanner = new Scanner(pin);//从管道接收输入
+            while (true) {
+                String str = scanner.nextLine();
+                //转为大写输出到stdio
+                System.out.println(str.toUpperCase());
+            }
+        }).start();
+
+        new Thread(() ->{//输入线程
+            Scanner scanner = new Scanner(System.in);//从stdin接收输入
+            while (true) {
+                String str = scanner.nextLine();
+                writer.write(str + "\n");//将数据写入管道到工作线程
+                writer.flush();
+            }
+        }).start();
+    }
+}
+```
+
+
+
+### 一个线程的输入从另外一个线程的输出来
+
+开两个线程，一个工作线程专门生成数据，将数据通过管道输出到处理IO的线程，IO线程从管道读取数据，输出到stdout。
+
+```java
+public class Main {
+    public static void main(String[] args) throws IOException {
+        //定义管道输出流
+        PipedInputStream pin = new PipedInputStream();
+        //定义管道输入流
+        PipedOutputStream pout = new PipedOutputStream(pin);//将pin的输入与pout的输出连接到一起
+        PrintWriter writer = new PrintWriter(pout);
+
+        new Thread(() ->{//工作线程
+            Scanner scanner = new Scanner(System.in);
+            for (int i = 0; i < 1000000; i++) {
+                writer.write("data" + i + "\n");//将数据写入管道到工作线程
+                writer.flush();
+            }
+        }).start();
+
+        new Thread(() ->{//输出线程
+            Scanner scanner = new Scanner(pin);//从管道接收输入
+            while (true) {
+                String str = scanner.nextLine();
+                System.out.println(str);
+            }
+        }).start();
+    }
+}
+```
+
+
+
+
 
 
 
@@ -994,17 +1361,199 @@ class ConditionUsage {
 
 ## 双缓冲与Exchanger
 
+正如**Exchanger**其名，exchanger用来**交换两个线程的数据**，相当于内部维护了一个只有来两个参与方的`CyclicBarrier`，当第一个线程执行exchange(x)方法的时候，被阻塞，第二个线程执行exchange(y)方法的时候，Exchanger将这个两个线程的传入值交换，并通过exchange方法返回。
+
+**当Exchanger的参与方法大于两个时，只要有任意两个线程调用了exchange方法，其实例就会交换这两个线程传入的数据**
+
+
+
+下面看一个简单的的代码示例看看交换效果，三个线程分别持有值为`hello`，`world`，`china`，反复执行程序，会观察到任意时候只有三个单词中的两个输出。
+
+```java
+public class Main {
+    public static void main(String[] args) throws IOException {
+        Exchanger<String> exchanger = new Exchanger<>();
+
+        new Thread(() -> {
+            try {
+                String t = exchanger.exchange("hello");
+                System.out.println(t);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
+
+        new Thread(() -> {
+            try {
+                String t = exchanger.exchange("world");
+                System.out.println(t);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
+
+        new Thread(() -> {
+            try {
+                String t = exchanger.exchange("china");
+                System.out.println(t);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
+    }
+}
+```
+
+
+
 
 
 
 
 ## 线程的中断机制
 
+线程的中断机智也相当于是线程间的一种通信方式，当一个线程给另一个线程发送中断信息时，表示希望收到信息的线程能够停止其正在执行的工作，但收到信号的线程采取什么样的行动有该线程自己决定，可能停止当前任务，也可能忽略该信号。
 
+每个线程内部维持一个标志变量表示线程是否被中断。当线程A调用线程B的interrupt方法时，线程B会将会将其标志变量置为false。`Thread.CurrentThread().isInterrupted()`获该表示变量的值，也可以通过`Thread..interrupted()`来获取并重置标志变量，即获取标志变量的值之后将其置为false。而调用一个线程的`interrupt()`方法相当于把该线程的标志变量置为`true`。
+
+**如果发起线程给目标线程发送中断通知的那一刻，目标线程正在执行某些操作被暂停(BLOCKED/WAITED)，那么虚拟机会设置好线程的中断标志变量之后将该线程唤醒，从而使得线程被唤醒之后继续执行的代码得到响应中断的机会。**
+
+能够响应中断的方法通常在执行阻塞操作前判断一下中断标志，如果中断标志为true，那么线程会抛出`InterruptedException`异常。惯例来讲，抛出`InterruptedException`异常的方法通常在抛出异常前将中断标志变量置为false。
 
 
 
 ## 线程停止
+
+在多线程环境中，当用户取消一些操作或者在运行过程中出现一些错误，需要将线程暂停。在比较简单的环境下可以通过设置标志变量或者使用interrupt方法来达成停止线程的目的，但是在复杂的情况下，单独的使用某一种方法可能无法达成目的。
+
+
+
+### 单独使用标志变量
+
+在线程所执行的任务中不含有阻塞操作时，使用标志变量就达能目的；但如果有阻塞操作的存在，当通知线程修改标志变量通知目标线程停止时，目标线程正被阻塞，无法相应通知线程发出的通知。
+
+- 单独使用标志变量可行模式
+
+```java
+() -> {
+    while (!stop) {
+        doNoneBlockingTask(); //任务不阻塞，可以立即完成任务并检查标志变量stop
+    }
+};
+```
+
+
+
+- 单独使用标志变量不可行模式
+
+```java
+() -> {
+    while (!stop) {
+        doBlockingTask(); //任务会阻塞，当stop置为true时，该线程可能被阻塞，无法检查标志变量
+    }
+};
+```
+
+
+
+
+
+### 单独使用中断
+
+- 单独使用中断可行
+
+```java
+() -> {
+    while (!Thread.currentThread().isInterrupted()) {
+        doNoneBlockingTask(); //任务不阻塞，可以立即完成任务并检查中断标志
+    }
+}
+```
+
+
+
+- 单独使用中断不一定可行
+
+```java
+() -> {
+    while (!Thread.currentThread().isInterrupted()) {
+        System.out.println("i'm working");
+        try {
+            Thread.sleep(10);//阻塞操作
+        } catch (InterruptedException e) {
+            e.printStackTrace();//线程抛出异常之后继续运行
+            //使用下面一行代码线程抛出异常之后再次中断自己，线程停止
+            //Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+由于阻塞操作在收到中断时抛出`InterruptedException`异常，并重置中断标志变量为false，所以线程能否正确中断，取决于线程处理异常的方式：
+
+- 不做任何处理：线程中断标志被清空，循环检查仍然为true，线程继续运行
+- 重新中断自己：线程停止
+
+
+
+### 正确的方式
+
+同时考虑到线程在执行任务的时候可能会被阻塞或其中断标志变量可能会被清空。比较通用的方式是同时使用中断和表示变量：**先设置标志变量，然后个目标线程发送中断**
+
+```java
+private volatile boolean hasTask = true;
+//目标工作线程(模式1)
+Thread t = new Thread(() -> {
+    try {
+        while (hasTask) {
+            task = tasks.take();//阻塞操作
+        }
+    } catch (InterruptedException e) {
+        e.printStackTrace();//线程抛出异常之后就退出循环
+    }
+});
+
+//目标工作线程(模式2)
+Thread t = new Thread(() -> {
+    while (hasTask && !Thread.currentThread().isInterrupted()) {
+        System.out.println("i'm working");
+        try {
+            Thread.sleep(10);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+});
+
+
+//停止代码
+void stop() {
+    hasTask = false;
+    t.interrupt();
+}
+```
+
+
+
+
+
+# 保障线程安全的相关设计技术
+
+## 无状态对象
+
+
+
+## 不可变对象
+
+
+
+## 线程局部变量
+
+
+
+## 并发集合
+
+
 
 
 
