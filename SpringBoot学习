@@ -1,0 +1,421 @@
+### maven创建项目
+
+`mvn archetype:generate`，之后系统将会以交互的模式引导创建项目。
+
+**如果卡在开始不动，加参数`-DarchetypeCatalog=internal`**
+
+
+
+也可以使用下面方式，直接填入相关参数：
+
+`mvn archetype:generate -DgroupId=com.yano -DartifactId=MavenJavaTest -DarchetypeArtifactId=maven-archetype-quickstart -DinteractiveMode=false`
+
+| 参数                  | 作用               |
+| --------------------- | ------------------ |
+| -DgroupId             | 相当于包名         |
+| -DartifactId          | 相当于项目跟目录名 |
+| -DarchetypeArtifactId | 项目初始化的模式   |
+
+
+
+### maven生成项目的jar包
+
+使用maven-jar-plugin包，在pom.xml文件中指明入口类，然后使用`mvn package`就可以在项目目录的target目录中生成jar包。
+
+```xml
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <version>3.1.1</version>
+            <configuration>
+                <archive>
+                    <manifest>
+                        <mainClass>com.xanarry.App</mainClass>
+                    </manifest>
+                </archive>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+
+
+如果需要把Springboot项目放到tomcat容器中运行，需要扩展类`SpringBootServletInitializer`以支持WAR文件部署。 Spring Boot应用程序类文件的代码如下
+
+```java
+package com.yiibai.demo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.web.support.SpringBootServletInitializer;
+
+@SpringBootApplication
+public class DemoApplication  extends SpringBootServletInitializer {
+   @Override
+   protected SpringApplicationBuilder configure(SpringApplicationBuilder application) {
+      return application.sources(DemoApplication.class);
+   }
+   public static void main(String[] args) {
+      SpringApplication.run(DemoApplication.class, args);
+   }
+}
+```
+
+然后将项目打包为war包放入tomcat中即可。
+
+
+
+
+
+Spring Boot应用程序的典型布局如下图所示 -
+
+```shell
+com
+    +- yiibai
+        +- myproject
+            +- Application.java
+            |
+            +- model
+            |    +- Product.java
+            +- dao
+            |    +- ProductRepository.java
+            +- controller
+            |    +- ProductController.java
+            +- service
+            |    +- ProductService.java
+```
+
+
+
+
+
+springboot异常处理
+
+其模式是通过@ControllerAdvice注解定义专门处理异常的类，用于全局处理异常。在该类中，使用可以定义`@ExceptionHandler`修饰的方法来处理具体异常。 
+
+```java
+@ControllerAdvice //全局异常处理类
+public class ProductExceptionController {
+   //处理ProductNotfoundException的方法
+   @ExceptionHandler(value = ProductNotfoundException.class)
+   public ResponseEntity<Object> exception(ProductNotfoundException exception) {
+      return new ResponseEntity<>("Product not found", HttpStatus.NOT_FOUND);
+   }
+}
+
+//自定义异常
+public class ProductNotfoundException extends RuntimeException {
+   private static final long serialVersionUID = 1L;
+}
+
+//有了上述的定义之后，在springboot的代码中throw ProductNotfoundException异常时，将由exception方法来处理
+```
+
+
+
+
+
+# 过滤器与拦截器
+
+## 过滤器
+
+过滤器是用于拦截应用程序的HTTP请求和响应的对象。通过使用过滤器，可以在两个实例上执行两个操作：
+
+- 在将请求发送到控制器之前
+- 在向客户发送响应之前。
+
+
+
+使用过滤器我们只需要实现Filter接口定义自己的过滤器即可
+
+```java
+//实现Filter接口定义我们自己的方法
+@Component
+class SimpleFilter implements Filter {
+   @Override
+   public void destroy() {}
+
+   @Override
+   public void doFilter(ServletRequest request, ServletResponse response, FilterChain filterchain)
+         throws IOException, ServletException {
+      System.out.println("before Remote Host:"+request.getRemoteHost());
+      filterchain.doFilter(request, response);
+      System.out.println("after Remote Host:"+request.getRemoteHost());
+   }
+
+   @Override
+   public void init(FilterConfig filterconfig) throws ServletException {}
+}
+```
+
+
+
+## 拦截器
+
+在Spring Boot中使用拦截器，可在以下情况下执行操作：
+
+- 在将请求发送到控制器之前
+- 在将响应发送给客户端之前
+
+通过AOP的方式，在处理http请求的方法置入拦截器中的方法。定义拦截器之后必须要将拦截器注册之后才能生效。
+
+```java
+//定义自己的拦截器，实现HandlerInterceptor接口
+@Component
+class MyInterceptor implements HandlerInterceptor {
+   @Override
+   public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+      System.out.println("preHandle " + request.getRequestURL()+ " " + response.getStatus());
+      return true;
+   }
+
+   @Override
+   public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+
+      System.out.println("posthandle " + request.getRequestURL() + " " + response.getStatus());
+   }
+
+   @Override
+   public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+      System.out.println("finishhandle " + request.getRequestURL());
+   }
+}
+
+//必须使用WebMvcConfigurerAdapter向InterceptorRegistry注册此Interceptor,才能生效
+@Component
+class ProductServiceInterceptorAppConfig extends WebMvcConfigurerAdapter {
+   @Autowired
+   MyInterceptor myInterceptor;
+
+   @Override
+   public void addInterceptors(InterceptorRegistry registry) {
+      registry.addInterceptor(myInterceptor);
+   }
+}
+```
+
+
+
+## 过滤器与拦截器的关系
+
+![](assets/filter_interceptor.png)
+
+- Filter是基于函数回调的，而Interceptor则是基于Java反射的。
+- Filter依赖于Servlet容器，而Interceptor不依赖于Servlet容器。
+- Filter对几乎所有的请求起作用，而Interceptor只能对action请求起作用。
+
+
+
+# 文件上传与下载
+
+## 文件上传
+
+```java
+@RequestMapping(value = "/up", method = RequestMethod.POST, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+public String up(@RequestParam("file") MultipartFile file) throws Exception {
+   File convertFile = new File("/var/tmp/"+file.getOriginalFilename());
+   convertFile.createNewFile();
+   FileOutputStream fout = new FileOutputStream(convertFile);
+   fout.write(file.getBytes());
+   fout.close();
+   return "File is upload successfully";
+}
+```
+
+## 文件下载
+
+```java
+@RequestMapping(value = "/download", method = RequestMethod.GET)
+public ResponseEntity<Object> downloadFile() throws IOException  {
+   String filename = "C:\\Users\\xanarry\\Desktop\\spring boot\\nostart\\src\\main\\java\\com\\example\\nostart\\spring.log";
+   File file = new File(filename);
+   InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
+   HttpHeaders headers = new HttpHeaders();
+
+   headers.add("Content-Disposition", String.format("attachment; filename=\"%s\"", file.getName()));
+   headers.add("Cache-Control", "no-cache, no-store, must-revalidate");
+   headers.add("Pragma", "no-cache");
+   headers.add("Expires", "0");
+
+   ResponseEntity<Object> responseEntity = ResponseEntity
+         .ok()
+         .headers(headers)
+         .contentLength(file.length())
+         .contentType(MediaType.parseMediaType("application/txt")).body(resource);
+
+   return responseEntity;
+}
+```
+
+
+
+# 服务组件
+
+服务组件(Service Components)是包含`@Service`注释的类文件。 这些类文件用于在不同的层中编写业务逻辑，与`@RestController`类文件分开。 此处显示了创建服务组件类文件的逻辑 -
+
+```java
+public interface ProductService {}
+```
+
+使用`@Service`注释实现接口的类如下所示 -
+
+```java
+@Service
+public class ProductServiceImpl implements ProductService {
+}
+```
+
+
+
+**`@Service`注解的类可以被spring扫描到，并自动注入到相应位置**
+
+
+
+# springboot定时任务调度
+
+`@EnableScheduling`注解用于为应用程序启用调度程序。将此批注添加到主Spring Boot应用程序类文件中。
+
+
+
+然后在主类中定义函数并用`@Scheduled`注解修饰即可
+
+```java
+@Scheduled(fixedRate = 1000)
+public void fixedRateSch() {
+   System.out.println("hello world");
+}
+```
+
+
+
+此外也可以自定义类，该类使用`@Component`修饰，然后在类中定义`@Scheduled`注解修饰的函数，如：
+
+```java
+@Component
+class Schedule {
+   @Scheduled(fixedRate = 1000)
+   public void fixedRateSch() {
+      System.out.println("hello world");
+   }
+}
+```
+
+
+
+
+
+# springboot的websocket
+
+## maven依赖
+SpringBoot2.0对WebSocket的支持简直太棒了，直接就有包可以引入
+
+		<dependency>  
+	       <groupId>org.springframework.boot</groupId>  
+	       <artifactId>spring-boot-starter-websocket</artifactId>  
+	   </dependency> 
+
+
+
+## 启用配置
+
+启用WebSocket的支持也是很简单，通过以下几句代码搞定
+
+```java
+@Configuration
+class WebSocketConfig {
+    @Bean
+    public ServerEndpointExporter serverEndpointExporter() {
+        return new ServerEndpointExporter();
+    }
+}
+```
+
+
+
+## websocket服务代码
+
+因为WebSocket是类似客户端服务端的形式(采用ws协议)，那么这里的WebSocketServer其实就相当于一个ws协议的Controller
+
+直接`@ServerEndpoint("/imserver/{userId}") `、`@Component`启用即可，然后在里面实现`@OnOpen`开启连接，`@onClose`关闭连接，`@onMessage`接收消息等方法。
+
+```java
+@ServerEndpoint("/im/{userId}") //指定ws的连接地址
+@Component
+public class Websocket {
+    /**
+     * 连接建立成功调用的方法
+     */
+    @OnOpen
+    public void onOpen(Session session, @PathParam("userId") String userId) {
+   		//做初始化连接的操作
+    }
+
+    /**
+     * 连接关闭调用的方法
+     */
+    @OnClose
+    public void onClose() {
+        System.out.println("用户退出:" + userId + ",当前在线人数为:" + getOnlineCount());
+    }
+
+    /**
+     * 收到客户端消息后调用的方法
+     * @param message 客户端发送过来的消息
+     */
+    @OnMessage
+    public void onMessage(String message, Session session) throws IOException {
+        System.out.println(this + " 用户消息:" + userId + ",报文:" + message);
+        session.getBasicRemote().sendText(message);
+    }
+
+    /**
+     * 定义错误发生的处理函数
+     */
+    @OnError
+    public void onError(Session session, Throwable error) {
+        System.out.println("用户错误:" + this.userId + ",原因:" + error.getMessage());
+    }
+
+    /**
+     * 实现服务器主动推送
+     */
+    public void sendMessage(String message) throws IOException {
+        this.session.getBasicRemote().sendText(message);
+    }
+}
+
+```
+
+**`@ServerEndpoint("uri") ,@Component`修饰的websocket处理类在系统处理每一个连接的时候都会建立一个该类的对象，在该类中定义的事件处理方法时无状态的。如果我们需要记录所以连接，那么在该类中定义一个静态容器变量即可，每当有新的连接建立时，把新建的该对象存入容器，后续需要使用这些连接的时候就冲静态容器中提取。**
+
+
+
+
+
+# springboot拦截器注入失败解决方法
+
+原因是因为拦截器的加载在springcontext之前，所以自动注入的mapper是null
+
+在Spring添加拦截器之前先自己创建一下这个Spring Bean，这样就能在Spring映射这个拦截器前，把拦截器中的依赖注入给完成了。
+
+修改配置：
+
+```java
+@Configuration
+public class WebAppConfig extends WebMvcConfigurerAdapter {
+  
+  @Bean //在这里生成对象用来注入
+  public UserInterceptor userInterceptor() {
+    return new UserInterceptor();
+  }
+  
+  @Override
+  public void addInterceptors(final InterceptorRegistry registry) {
+    registry.addInterceptor(userInterceptor())
+  }
+}
+```
