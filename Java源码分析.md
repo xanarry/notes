@@ -1999,9 +1999,206 @@ java的Stack继承制Vector，所有的方法均有synchronize修饰，所以**s
 
 ### ConcurrentHashMap
 
+ConcurrentHashMap是hashMap的并发版本，不同于synchronizedHashMap使用synchronized关键词将hashMap的方法修饰起来，并发操作下每次锁定整个数据结构。ConcurrentHashMap使用了分段锁的机制，在并发环境下，每次只锁定一个哈希槽，降低了线程对资源的争用，提升了并发能力。
+
+
+
 map的concurrencyLevel相当于同时可以允许多少个线程同时并发操作，因此，为了保证每个线程能够分段的在一个数组槽中做操作，table数组的长度不能小于这个值。
 
+```java
+static final int MOVED = -1; // hash for forwarding nodes
+static final int TREEBIN = -2; // hash for roots of trees
+static final int RESERVED = -3; // hash for transient reservations
+static final int HASH_BITS = 0x7fffffff; // usable bits of normal node hash
+```
 
+
+
+
+
+
+
+#### hash计算
+
+h是key的hashCode，无符号右移16位之后再做异或运算是为了让hash更加随机，因为这个操作可能会让哈希值变成负值，而负哈希在concurrentHashMap中有特殊的意义，所以最后在于0x7fffffff做与运行，把符号位值为正（最高位0正1负）
+
+```java
+static final int spread(int h) {
+    return (h ^ (h >>> 16)) & HASH_BITS; //HASH_BITS=0x7fffffff
+}
+```
+
+
+
+### 初始化
+
+成员变量sizeCtl在ConcurrentHashMap中的其中一个作用相当于HashMap中的threshold，当hash表中元素个数超过sizeCtl时，触发扩容； 他的另一个作用类似于一个标识，例如，当他等于-1的时候，说明已经有某一线程在执行hash表的初始化了，一个小于-1的值表示某一线程正在对hash表执行resize。
+
+初始化流程如下：
+
+> 首先检查table是否未初始化，如果没初始化，那么往下执行初始化过程。
+>
+> 检查sizeCtl，判断是不是有线程正在执行初始化或者扩容操作，如果有，那么当前线程交出CPU，等其他线程先执行。没有的话就往下进行初始化操作。
+>
+> 为了限制任何时候都只有一个线程在做初始化操作，使用compareAndSwapInt函数修改标志变量，该函数的参数分别是（对象，属性在对象中的便宜，期待的旧值，目标新值），不让其他线程再进入。
+>
+> 初始化之前再次对table做一次检查，当两个线程同时进入while循环之后，其中一个线程完成了对table的初始化，而另一个线程再次做重复的操作，导致数据丢失。
+>
+> `sc = n - (n >>> 2); `这行代码是更新sc为N*0.75
+
+```java
+private final Node<K, V>[] initTable() {
+    Node<K, V>[] tab;
+    int sc;
+    // 只要当table为null或者长度为0的时候，都需要初始化
+    while ((tab = table) == null || tab.length == 0) {
+        // 初始化前sizeCtl表示需要被初始化的长度
+        if ((sc = sizeCtl) < 0) // 如果sizeCtl为-1，表示正在初始化或调整表的大小
+            Thread.yield(); //放弃CPU，等待一下 lost initialization race; just spin
+        else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+            // unsafe.compareAndSwapInt(base, offset, expect, newVal); 
+            // SIZECTL表内存位置，sc是期待值，-1是新值
+            // 可以进入初始化，通过CAS把sizeCtl的值设置为-1，表示正在初始化
+            try {
+                // 再次检测是否未初始化，因为在并发环境下，可能两个线程进入了循环
+                // 一个线程已经对table完成了初始化，下一个线程才开始操作，
+                // 这样可以避免重复初始化
+                if ((tab = table) == null || tab.length == 0) {
+                    // 选择使用默认的长度或者是用户指定的长度
+                    int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
+                    @SuppressWarnings("unchecked")
+                    // 初始化数组
+                    Node<K, V>[] nt = (Node<K, V>[]) new Node<?, ?>[n];
+                    table = tab = nt;
+                    //(n-n/4)=0.75n, n为100，n>>>2为100/4=25，所以sc为0.75n
+                    sc = n - (n >>> 2); 
+                }
+            } finally {
+                // 更新容纳长度
+                sizeCtl = sc;
+            }
+            break;
+        }
+    }
+    return tab;
+}
+```
+
+#### 插入
+
+
+
+```java
+final V putVal(K key, V value, boolean onlyIfAbsent) {
+    // 插入数据无论是key还是value，不允许为空
+    if (key == null || value == null) throw new NullPointerException();
+    // 根据key的哈希值重新计算哈希
+    int hash = spread(key.hashCode());
+
+    int binCount = 0;
+    // 死循环，不断访问哈希表
+    for (Node<K, V>[] tab = table; ; ) {
+        Node<K, V> f;
+        int n, i, fh;
+        // 如果哈希表为null或者表长为空，对哈希表初始化
+        if (tab == null || (n = tab.length) == 0)
+            tab = initTable();
+        else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+            // 如果哈希表不为空，并且目标槽是空闲的，调用casTabAt将新建的节点放入该槽
+            if (casTabAt(tab, i, null, new Node<K, V>(hash, key, value, null)))
+                break;//完成操作， no lock when adding to empty bin
+        } else if ((fh = f.hash) == MOVED) // MOVED = -1;
+            // 如果该槽的节点状态为MOVED，表示正在扩容，调用helpTransfer，扩容完毕之后再插入
+            tab = helpTransfer(tab, f);
+        else {
+            V oldVal = null;
+            // 哈希有冲突，锁定当前哈希映射到的槽，同步代码块，进行插入操作
+            synchronized (f) { // 互斥操作块
+                if (tabAt(tab, i) == f) { // 再次检查哈希槽是不是因为其他线程扩容发生了改变
+                    if (fh >= 0) { // 当前插入的是链表
+                        binCount = 1;//记录链表长度
+                        for (Node<K, V> e = f; ; ++binCount) {
+                            K ek;
+                            // 遍历过程中，如果该哈希链表中已经存在相同的元素，
+                            // 用新的替换旧的value，并返回旧的value
+                            if (e.hash == hash &&
+                                ((ek = e.key) == key ||
+                                 (ek != null && key.equals(ek)))) {
+                                oldVal = e.val; // 保存旧值
+
+                                if (!onlyIfAbsent)
+                                    e.val = value;
+                                break;
+                            }
+                            // 遍历到链表尾部，插入新的节点
+                            Node<K, V> pred = e;
+                            if ((e = e.next) == null) {
+                                pred.next = new Node<K, V>(hash, key, value, null);
+                                break;
+                            }
+                        }
+                    } else if (f instanceof TreeBin) {//当前插入的是红黑树
+                        Node<K, V> p;
+                        binCount = 2;
+                        // 调用红黑树的方法插入红黑树
+                        if ((p = ((TreeBin<K, V>) f)
+                             .putTreeVal(hash, key, value)) != null) {
+                            oldVal = p.val;
+
+                            if (!onlyIfAbsent)
+                                p.val = value;
+                        }
+                    }
+                }
+            }// end syc
+
+            if (binCount != 0) {// 如果链表长度超过TREEIFY_THRESHOLD，转链表为二叉树
+                if (binCount >= TREEIFY_THRESHOLD)
+                    treeifyBin(tab, i);
+                if (oldVal != null)
+                    return oldVal;
+                break;
+            }
+        }
+    }
+    // 原子操作更新元素个数，如果需要，做扩容操作
+    addCount(1L, binCount);
+    return null;
+}
+```
+
+
+
+#### 获取元素
+
+```java
+public V get(Object key) {
+    Node<K, V>[] tab; //创建一个table的引用副本
+    Node<K, V> e, p;
+    int n, eh;
+    K ek;
+    int h = spread(key.hashCode());
+    //如果表不为空，表长大于0，且哈希映射到的子表也不为null
+    if ((tab = table) != null 
+        && (n = tab.length) > 0 
+        && (e = tabAt(tab, (n - 1) & h)) != null) {
+        if ((eh = e.hash) == h) {
+            //哈希,key,value全相同才认为相同，返回
+            if ((ek = e.key) == key || (ek != null && key.equals(ek)))
+                return e.val;//返回value
+        } else if (eh < 0) //如果哈希值小于0，表明这是红黑树的根节点，转到红黑树中查找并返回
+            return (p = e.find(h, key)) != null ? p.val : null;
+
+        //否则遍历链表搜索元素
+        while ((e = e.next) != null) {
+            if (e.hash == h &&
+                ((ek = e.key) == key || (ek != null && key.equals(ek))))
+                return e.val;
+        }
+    }
+    return null;
+}
+```
 
 
 
