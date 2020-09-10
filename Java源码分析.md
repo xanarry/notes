@@ -1636,13 +1636,13 @@ static final int hash(Object key) {
 
 #### 插入
 
-当用户调用put(key, value)后，hashMap会转为调用putVal()将数据插入map
+当用户调用put(key, value)后，hashMap会转为调用putVal()将数据插入map，hashMap中table初始化时候是空的。
 
 插入流程大致如下：
 
 >步骤1：检查哈希数组是否为空，如果为空转到步骤2，否则转到步骤3
 >
->步骤2：对hashMap做resize操作，resize可能是初始化，可能是容量扩展。然后执行步骤3
+>步骤2：对hashMap做resize操作，resize可能是初始化容量，也可能是容量扩展。然后执行步骤3
 >
 >步骤3：检查该哈希值是否第一次出现，如果是第一次出现，直接新建一个节点插入map中，否则执行步骤4
 >
@@ -1650,7 +1650,7 @@ static final int hash(Object key) {
 >
 >步骤5：调用putTreeVal将数据插入树中，并记录新插入的元素为e。转到步骤7
 >
->步骤6：遍历该链表，如果遇到相同元素，标记为e并退出循环；遍历到链表尾部，然后插入新的节点，最后检查链表长度是否超过树化阈值，如果超过，那么执行treeifyBin树化。转到步骤7
+>步骤6：遍历该链表，如果遇到相同元素，标记为e并退出循环；**遍历到链表尾部，然后插入新的节点**，最后检查链表长度是否超过树化阈值，如果超过，那么执行treeifyBin树化。转到步骤7
 >
 >步骤7：如果插入的数据的key已经存在，且不为null，设置onlyIfAbsent的情况下，用新的value更新旧的value，然后返回旧的value。转到步骤8
 >
